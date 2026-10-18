@@ -17,6 +17,11 @@ const archives = {
   ],
 };
 
+async function openLoader(page) {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Load game', exact: true }).click();
+}
+
 test('finds a username, selects a game and sends its PGN for analysis', async ({ page }) => {
   const calls = [];
   await page.route(endpoint, (route) => {
@@ -35,7 +40,7 @@ test('finds a username, selects a game and sends its PGN for analysis', async ({
       analysis_depth: 12, analysis_time_seconds: 0.2,
     } });
   });
-  await page.goto('/');
+  await openLoader(page);
   await page.locator('#chesscom-username').fill('Player');
   await page.getByRole('button', { name: 'Find games', exact: true }).click();
   await expect(page.locator('#chesscom-game option')).toHaveCount(2);
@@ -45,9 +50,11 @@ test('finds a username, selects a game and sends its PGN for analysis', async ({
   await page.locator('#chesscom-game').selectOption('1');
   await page.getByRole('button', { name: 'Load selected game' }).click();
   await expect(page.locator('#pgn')).toHaveValue(pgns[1]);
+  await expect(page.locator('#import-dialog')).toBeVisible();
   expect(analysisPGN).toBeUndefined();
   await page.getByRole('button', { name: 'Analyze game' }).click();
   await expect(page.locator('#status')).toContainText('Analysis complete');
+  await expect(page.locator('#import-dialog')).not.toBeVisible();
   expect(analysisPGN).toBe(pgns[1]);
   expect(calls).toEqual([
     { username: 'Player' },
@@ -68,7 +75,7 @@ test('browses game pages and months without leaving stale games on failure', asy
     const number = Number(params.get('page'));
     return route.fulfill({ json: { username: 'player', page: number, pages: 2, total: 26, games: [games[number - 1]] } });
   });
-  await page.goto('/');
+  await openLoader(page);
   await page.locator('#chesscom-username').fill('Player');
   await page.getByRole('button', { name: 'Find games', exact: true }).click();
   await expect(page.locator('#games-page')).toHaveText('26 games · 1 / 2');
@@ -99,7 +106,7 @@ test('handles unknown users, empty archives, and months with no standard games',
       ? { username: 'player', page: 1, pages: 1, total: 0, games: [] }
       : archives });
   });
-  await page.goto('/');
+  await openLoader(page);
   await page.locator('#chesscom-username').fill('unknown');
   await page.getByRole('button', { name: 'Find games', exact: true }).click();
   await expect(page.locator('#chesscom-error')).toContainText('could not find');
@@ -127,7 +134,7 @@ test('editing the username cancels pending results and invalidates old selection
       ? { username: 'player', page: 1, pages: 1, total: 2, games }
       : archives });
   });
-  await page.goto('/');
+  await openLoader(page);
   await page.locator('#chesscom-username').fill('oldplayer');
   const requested = page.waitForRequest((req) => req.url().includes('username=oldplayer'));
   await page.getByRole('button', { name: 'Find games', exact: true }).click();

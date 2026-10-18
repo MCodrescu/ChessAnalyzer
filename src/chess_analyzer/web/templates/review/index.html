@@ -14,13 +14,9 @@
 <body>
   <header class="site-header">
     <a class="brand" href="{% url 'review' %}"><span aria-hidden="true">♞</span> ChessAnalyzer<span class="brand-tag">REVIEW</span></a>
-    <span class="local-badge"><span></span> Local Stockfish</span>
+    <div class="header-actions"><span class="local-badge"><span></span> Local Stockfish</span><button type="button" id="load-game" class="primary" aria-haspopup="dialog" aria-controls="import-dialog">Load game</button></div>
   </header>
   <main>
-    <section class="intro">
-      <div><p class="eyebrow">EVERY MOVE TELLS A STORY</p><h1>Find your next better move.</h1><p>Replay your game. Compare your decisions with Stockfish.</p></div>
-      <button type="button" id="demo" class="secondary">Load example game</button>
-    </section>
     <section class="workspace" aria-label="Game analysis workspace">
       <div class="board-column">
         <div class="player-card"><span class="avatar">♚</span><div><strong id="black-player">Black</strong><span id="game-event">Import a game to get started</span></div><span class="color-dot black"></span></div>
@@ -39,38 +35,32 @@
         <p class="board-caption"><span class="legend green"></span> Engine best <span class="legend blue"></span> Played move <span class="keyboard-hint">Use ← → to explore</span></p>
       </div>
       <aside class="review-column">
-        <section class="panel import-panel">
-          <div class="panel-heading"><h2>Your game</h2><span class="small-label">PGN IMPORT</span></div>
-          <form id="chesscom-form" action="{% url 'chesscom-games' %}" method="get">
-            <label for="chesscom-username">Find a game by Chess.com username</label>
-            <div class="username-search">
-              <input id="chesscom-username" name="username" type="text" maxlength="25" pattern="[A-Za-z0-9_\-]+" placeholder="Chess.com username" autocomplete="off" spellcheck="false" required>
-              <button id="chesscom-search" type="submit" class="secondary">Find games</button>
-            </div>
-          </form>
-          <div id="chesscom-picker" hidden>
-            <label for="chesscom-month">Archive month</label>
-            <select id="chesscom-month"></select>
-            <label for="chesscom-game">Completed standard games · newest first</label>
-            <select id="chesscom-game" size="4" disabled></select>
-            <div class="game-pagination">
-              <button type="button" id="games-previous" class="secondary" aria-label="Previous game page" disabled>←</button>
-              <span id="games-page" class="muted"></span>
-              <button type="button" id="games-next" class="secondary" aria-label="Next game page" disabled>→</button>
-              <button type="button" id="chesscom-load" class="secondary" disabled>Load selected game</button>
-            </div>
-          </div>
-          <p id="chesscom-status" class="muted" role="status" aria-live="polite">Public completed games only. No login needed.</p>
-          <p id="chesscom-error" class="lookup-error" role="alert" hidden></p>
-          <div class="import-divider"><span>OR IMPORT PGN</span></div>
-          <form id="analysis-form" action="{% url 'analyze' %}">
-            {% csrf_token %}
-            <label for="pgn">Paste a PGN or choose a PGN file</label>
-            <textarea id="pgn" name="pgn" rows="4" maxlength="100000" required spellcheck="false" placeholder='[White "You"]&#10;[Black "Opponent"]&#10;&#10;1. e4 e5 2. Nf3 Nc6 *'></textarea>
-            <div class="import-actions"><label class="file-label" for="pgn-file">↥ Open PGN<input id="pgn-file" type="file" accept=".pgn,text/plain,application/x-chess-pgn"></label><button id="analyze-button" type="submit" class="primary">Analyze game <span aria-hidden="true">↗</span></button></div>
-          </form>
+        <div class="review-status">
           <p id="status" role="status" aria-live="polite">Analysis stays local. No games saved to disk.</p>
           <p id="error" role="alert" hidden></p>
+        </div>
+        <section class="panel summary-panel" aria-labelledby="summary-heading">
+          <div class="panel-heading"><h2 id="summary-heading">Game accuracy</h2><span class="small-label" title="Mean move accuracy estimated from local Stockfish winning-chance loss, not an official Chess.com or Lichess rating.">LOCAL ESTIMATE</span></div>
+          <div class="accuracy-cards">
+            <div><span class="accuracy-color"><span class="color-dot white"></span> White</span><strong id="white-accuracy">—</strong><span id="white-accuracy-name">White</span></div>
+            <div><span class="accuracy-color"><span class="color-dot black"></span> Black</span><strong id="black-accuracy">—</strong><span id="black-accuracy-name">Black</span></div>
+          </div>
+          <p class="accuracy-note muted">Estimated mean move accuracy. Not a Chess.com or Lichess game rating.</p>
+          <div class="panel-heading graph-heading"><h2>Game evaluation</h2><span id="graph-readout" class="small-label">No analyzed moves</span></div>
+          <div class="evaluation-chart">
+            <svg id="evaluation-graph" viewBox="0 0 600 130" preserveAspectRatio="none" role="img" aria-label="Game evaluation graph. No analyzed moves.">
+              <rect x="30" y="16" width="560" height="49" class="graph-white"></rect>
+              <rect x="30" y="65" width="560" height="49" class="graph-black"></rect>
+              <text x="2" y="21">+10</text><text x="12" y="69">0</text><text x="2" y="117">−10</text>
+              <line x1="30" y1="65" x2="590" y2="65" class="graph-zero"></line>
+              <path id="graph-line" fill="none"></path>
+              <line id="graph-cursor" x1="30" x2="30" y1="16" y2="114" style="display:none"></line>
+              <circle id="graph-dot" r="4" style="display:none"></circle>
+            </svg>
+            <p id="graph-empty" class="muted">Analyze a game to see its evaluation.</p>
+          </div>
+          <input id="graph-position" type="range" min="0" max="0" value="0" step="1" aria-label="Game graph position" aria-valuetext="No analyzed moves" disabled>
+          <p id="graph-note" class="muted">Actual game · ±10 pawn display limit · Click the graph or use the slider.</p>
         </section>
         <section class="panel comparison-panel" aria-labelledby="position-heading">
           <div class="panel-heading"><h2 id="position-heading">Move insights</h2><span id="quality" class="quality">READY TO EXPLORE</span></div>
@@ -93,7 +83,42 @@
         </section>
       </aside>
     </section>
-    <footer><span>Powered by <a href="https://github.com/lichess-org/chessground">Lichess Chessground</a> &amp; Stockfish</span><span>Scores favor White when positive. Search estimates, not accuracy ratings.</span></footer>
+    <footer><span>Powered by <a href="https://github.com/lichess-org/chessground">Lichess Chessground</a> &amp; Stockfish</span><span>Positive evaluation favors White. Accuracy is a local estimate.</span></footer>
   </main>
+  <dialog id="import-dialog" aria-labelledby="import-heading" aria-describedby="import-description">
+    <div class="panel-heading"><h2 id="import-heading">Load a game</h2><button id="close-import" type="button" class="secondary" aria-label="Close game loader">✕</button></div>
+    <p id="import-description" class="muted">Choose a public Chess.com game or import a PGN. Your current review stays available until the next analysis finishes.</p>
+    <form id="chesscom-form" action="{% url 'chesscom-games' %}" method="get">
+      <label for="chesscom-username">Find a game by Chess.com username</label>
+      <div class="username-search">
+        <input id="chesscom-username" name="username" type="text" maxlength="25" pattern="[A-Za-z0-9_\-]+" placeholder="Chess.com username" autocomplete="off" spellcheck="false" required autofocus>
+        <button id="chesscom-search" type="submit" class="secondary">Find games</button>
+      </div>
+    </form>
+    <div id="chesscom-picker" hidden>
+      <label for="chesscom-month">Archive month</label>
+      <select id="chesscom-month"></select>
+      <label for="chesscom-game">Completed standard games · newest first</label>
+      <select id="chesscom-game" size="4" disabled></select>
+      <div class="game-pagination">
+        <button type="button" id="games-previous" class="secondary" aria-label="Previous game page" disabled>←</button>
+        <span id="games-page" class="muted"></span>
+        <button type="button" id="games-next" class="secondary" aria-label="Next game page" disabled>→</button>
+        <button type="button" id="chesscom-load" class="secondary" disabled>Load selected game</button>
+      </div>
+    </div>
+    <p id="chesscom-status" class="muted" role="status" aria-live="polite">Public completed games only. No login needed.</p>
+    <p id="chesscom-error" class="lookup-error" role="alert" hidden></p>
+    <div class="import-divider"><span>OR IMPORT PGN</span></div>
+    <form id="analysis-form" action="{% url 'analyze' %}">
+      {% csrf_token %}
+      <label for="pgn">Paste a PGN or choose a PGN file</label>
+      <textarea id="pgn" name="pgn" rows="4" maxlength="100000" required spellcheck="false" placeholder='[White "You"]&#10;[Black "Opponent"]&#10;&#10;1. e4 e5 2. Nf3 Nc6 *'></textarea>
+      <div class="import-actions"><label class="file-label" for="pgn-file">↥ Open PGN<input id="pgn-file" type="file" accept=".pgn,text/plain,application/x-chess-pgn"></label><button id="analyze-button" type="submit" class="primary">Analyze game <span aria-hidden="true">↗</span></button></div>
+    </form>
+    <button type="button" id="demo" class="secondary modal-demo">Load example game</button>
+    <p id="import-status" class="muted" role="status" aria-live="polite">Analysis stays local. No games saved to disk.</p>
+    <p id="import-error" class="lookup-error" role="alert" hidden></p>
+  </dialog>
 </body>
 </html>

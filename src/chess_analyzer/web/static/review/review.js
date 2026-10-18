@@ -1,17 +1,21 @@
 import { formatEvaluation, positionFor } from './review-state.js';
+import { ReviewSummary } from './review-summary.js';
+import { importDialog, setReviewStatus } from './import-dialog.js';
 import './chesscom-import.js';
 
 const $ = (id) => document.getElementById(id);
-const status = $('status');
 let ground;
 let analysis;
 let selected = 0;
 let preview = 'before';
 let moveButtons = [];
+const summary = new ReviewSummary(selectMove);
 
 function showError(message) {
-  $('error').textContent = message;
-  $('error').hidden = !message;
+  for (const id of ['error', 'import-error']) {
+    $(id).textContent = message;
+    $(id).hidden = !message;
+  }
 }
 
 // A missing build should produce an actionable message, not a broken page.
@@ -55,6 +59,7 @@ function selectMove(index, nextPreview = 'before') {
   preview = nextPreview;
   selected = Math.max(0, Math.min(index, analysis.moves.length - 1));
   const move = analysis.moves[selected];
+  summary.select(selected, preview);
   for (const [i, button] of moveButtons.entries()) {
     button.setAttribute('aria-current', String(i === selected));
   }
@@ -91,7 +96,16 @@ function selectMove(index, nextPreview = 'before') {
   $('preview-note').textContent = preview === 'before'
     ? 'Before the move: green = engine best, blue = played. One arrow if they match.'
     : preview === 'played' ? 'Position after the actual game move.' : 'Position after the engine’s suggested move (one-move preview).';
-  moveButtons[selected]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  // Reveal the selection inside the move list without scrolling the page/board.
+  const list = $('move-list');
+  const buttonBounds = moveButtons[selected].getBoundingClientRect();
+  const listTop = list.getBoundingClientRect().top + list.clientTop;
+  const listBottom = listTop + list.clientHeight;
+  if (buttonBounds.top < listTop) {
+    list.scrollTop += buttonBounds.top - listTop;
+  } else if (buttonBounds.bottom > listBottom) {
+    list.scrollTop += buttonBounds.bottom - listBottom;
+  }
 }
 
 $('analysis-form').addEventListener('submit', async (event) => {
@@ -101,7 +115,7 @@ $('analysis-form').addEventListener('submit', async (event) => {
   $('analyze-button').disabled = true;
   $('analyze-button').textContent = 'Analyzing…';
   $('analysis-form').setAttribute('aria-busy', 'true');
-  status.textContent = 'Stockfish is reviewing every position. A typical game takes 10–30 seconds; longer games can take several minutes. Keep this tab open.';
+  setReviewStatus('Stockfish is reviewing every position. A typical game takes 10–30 seconds; longer games can take several minutes. Keep this tab open.');
   try {
     const response = await fetch(event.currentTarget.action, {
       method: 'POST',
@@ -120,11 +134,13 @@ $('analysis-form').addEventListener('submit', async (event) => {
     $('game-result').textContent = `Result: ${data.headers.Result || '*'} · ${data.moves.length} half-moves`;
     $('analysis-settings').textContent = `DEPTH ≤ ${data.analysis_depth} · ${data.analysis_time_seconds === null ? 'DEPTH ONLY' : `${data.analysis_time_seconds}s/POS`}`;
     renderMoveList();
+    summary.render(data);
     selectMove(0);
-    status.textContent = 'Analysis complete. Click any move to compare the choices.';
+    setReviewStatus('Analysis complete. Click any move to compare the choices.');
+    importDialog.close();
   } catch (error) {
     showError(error.message || 'Unable to reach the analysis server.');
-    status.textContent = 'Analysis did not complete. Your previous review is still available.';
+    setReviewStatus('Analysis did not complete. Your previous review is still available.');
   } finally {
     $('analyze-button').disabled = false;
     $('analyze-button').textContent = 'Analyze game ↗';
@@ -142,7 +158,7 @@ $('pgn-file').addEventListener('change', async (event) => {
   }
   try {
     $('pgn').value = await file.text();
-    status.textContent = 'PGN loaded. Select Analyze game to begin.';
+    setReviewStatus('PGN loaded. Select Analyze game to begin.');
   } catch {
     showError('Unable to read this PGN file.');
   }
@@ -150,10 +166,20 @@ $('pgn-file').addEventListener('change', async (event) => {
 
 $('demo').addEventListener('click', () => {
   $('pgn').value = '[Event "A quick lesson"]\n[White "Curious player"]\n[Black "Club opponent"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1';
-  status.textContent = 'Example loaded: Fool’s mate. Select Analyze game to explore.';
+  setReviewStatus('Example loaded: Fool’s mate. Select Analyze game to explore.');
   $('pgn').focus();
 });
-$('flip').addEventListener('click', () => ground?.toggleOrientation());
+$('flip').addEventListener('click', () => {
+  if (!ground) return;
+  ground.toggleOrientation();
+  const whiteCard = $('white-player').closest('.player-card');
+  const blackCard = $('black-player').closest('.player-card');
+  const board = $('board').closest('.board-shell');
+  const whiteAtBottom = ground.state.orientation === 'white';
+  // Move whole cards so names, color indicators, and metadata stay together.
+  board.before(whiteAtBottom ? blackCard : whiteCard);
+  board.after(whiteAtBottom ? whiteCard : blackCard);
+});
 $('first').addEventListener('click', () => selectMove(0));
 $('previous').addEventListener('click', () => selectMove(selected - 1));
 $('next').addEventListener('click', () => selectMove(selected + 1));
@@ -162,6 +188,7 @@ for (const button of document.querySelectorAll('[data-preview]')) {
   button.addEventListener('click', () => selectMove(selected, button.dataset.preview));
 }
 document.addEventListener('keydown', (event) => {
+  if (importDialog.open) return;
   if (!analysis?.moves.length || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
   const targets = { ArrowLeft: selected - 1, ArrowRight: selected + 1, Home: 0, End: analysis.moves.length - 1 };

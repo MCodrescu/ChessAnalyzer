@@ -39,10 +39,42 @@ never falls back silently. No engine is downloaded or started during imports.
 ### Django game review
 
 The web application uses Lichess's **Chessground** board and the same local
-analyzer as the CLI/notebook. Choose a Chess.com game, paste a PGN, open a PGN
-file, or load the example; select **Analyze game**, then click any move.
+analyzer as the CLI/notebook. Select **Load game** to open the game-loading modal.
+Choose a Chess.com game, paste a PGN, open a PGN file, or load the example;
+select **Analyze game**, then click any move. The modal closes after successful
+analysis. Escape or the close button dismisses it without losing the current
+review or the PGN being edited. Loading a game never starts analysis by itself.
 Left/right arrows navigate moves;
 Home/End jump to the first/last move. The board can be flipped.
+
+The board and navigation fit the browser's viewport height. The review panels
+show game accuracy, the evaluation graph, move insights, and the move list;
+loading controls stay in the modal to save space. On desktop, the move list
+scrolls within its panel; on phones, the review panels scroll below the board
+without moving the board or the page.
+
+#### Accuracy and evaluation graph
+
+- **Game accuracy** shows a separate estimated percentage for White and Black,
+  computed locally from their analyzed moves. These are **not official
+  Chess.com or Lichess game ratings** and depend on the engine/search settings.
+- Move scores use the [published Lichess winning-chance and move-accuracy
+  formulas](https://lichess.org/page/accuracy): White's estimated win percentage
+  is `100 / (1 + exp(-0.00368208 * cp))`. From the mover's perspective, a positive
+  loss of `L` percentage points gives
+  `clamp(103.1668 * exp(-0.04354 * L) - 3.1669, 0, 100)` accuracy.
+  Engine-best moves and moves with no measured loss score 100. Each player's
+  game estimate is the **arithmetic mean** of their scored moves, **not**
+  Lichess's volatility-weighted/harmonic game calculation.
+- Forced mates and terminal wins map to 100%/0% White winning chances, and
+  terminal draws to 50%. Missing evaluations are excluded; no scored moves
+  display a dash rather than a fabricated accuracy.
+- The **evaluation graph** plots the starting position and each actual move's
+  resulting evaluation, always White-relative, regardless of board orientation.
+  Positive values favor White. The display is capped at ±10 pawns; mate scores
+  sit at the corresponding edge, while the readout retains the real score/mate.
+  Click the graph or use its keyboard-accessible slider to jump to a position.
+  Best-line previews are not plotted or given a fabricated evaluation.
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -61,7 +93,8 @@ as PGNs and imported here.
 
 #### Choose a Chess.com game
 
-1. Enter a **Chess.com username** and select **Find games** (no login/API key).
+1. Select **Load game**, enter a **Chess.com username**, then select **Find games**
+  (no login/API key).
 2. The newest available archive month opens automatically. Choose another
   **Archive month** to browse older games.
 3. Select a game, then **Load selected game**. Lists show both players/ratings,

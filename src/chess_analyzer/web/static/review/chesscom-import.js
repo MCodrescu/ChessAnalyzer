@@ -1,4 +1,6 @@
 /** Import a public completed game, without starting analysis automatically. */
+import { setReviewStatus } from './import-dialog.js';
+
 const $ = (id) => document.getElementById(id);
 const form = $('chesscom-form');
 let username = '';
@@ -130,6 +132,7 @@ $('chesscom-load').addEventListener('click', () => {
   if (index < 0 || !games[index]) return;
   $('pgn').value = games[index].pgn;
   $('error').hidden = true;
-  $('status').textContent = `Game loaded from Chess.com (${username}). Select Analyze game to begin; any previous review remains until analysis completes.`;
+  $('import-error').hidden = true;
+  setReviewStatus(`Game loaded from Chess.com (${username}). Select Analyze game to begin; any previous review remains until analysis completes.`);
   $('pgn').focus();
 });
