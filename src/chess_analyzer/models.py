@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-class StockfishAPIError(RuntimeError):
-    """The provider request or response failed; messages exclude credentials."""
+class StockfishEngineError(RuntimeError):
+    """The local engine could not start, search, or return a valid result."""
 
 
 class InvalidPGNError(ValueError):
@@ -62,8 +62,9 @@ class MoveAnalysis:
 
 @dataclass(frozen=True, slots=True)
 class GameAnalysis:
-    """PGN headers, ordered mainline results, and the search depth used."""
+    """PGN results and requested search caps (not necessarily achieved depth)."""
 
     headers: dict[str, str]
     moves: tuple[MoveAnalysis, ...]
     analysis_depth: int
+    analysis_time_seconds: float | None = None

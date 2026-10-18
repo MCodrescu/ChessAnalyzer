@@ -7,7 +7,11 @@ import chess
 import pytest
 
 from chess_analyzer.analyzer import PGNAnalyzer
-from chess_analyzer.models import InvalidPGNError, PositionEvaluation, StockfishAPIError
+from chess_analyzer.models import (
+    InvalidPGNError,
+    PositionEvaluation,
+    StockfishEngineError,
+)
 
 
 class FakeEvaluator:
@@ -69,6 +73,7 @@ def test_white_and_black_loss_signs_and_result_metadata(make_evaluator, settings
     result = PGNAnalyzer(client).analyze('[Event "Unit test"]\n\n1. e4 e5 *')
     assert result.headers["Event"] == "Unit test"
     assert result.analysis_depth == settings.analysis_depth
+    assert result.analysis_time_seconds == settings.analysis_time_seconds
     assert isinstance(result.moves, tuple)
     white, black = result.moves
     assert (white.player, white.ply, white.fullmove_number) == ("white", 1, 1)
@@ -360,14 +365,14 @@ def test_recorded_result_does_not_force_a_terminal_evaluation(make_evaluator, re
 
 
 @pytest.mark.parametrize("failure_index", [0, 1, 2])
-def test_provider_failures_propagate_without_partial_result(
+def test_engine_failures_propagate_without_partial_result(
     make_evaluator, failure_index
 ):
     client = make_evaluator(["e4", "e5"])
-    failure = StockfishAPIError("sanitized provider failure")
+    failure = StockfishEngineError("engine failure")
     responses = list(client.evaluations.values())[:failure_index] + [failure]
     client.evaluate = Mock(side_effect=responses)
-    with pytest.raises(StockfishAPIError) as error:
+    with pytest.raises(StockfishEngineError) as error:
         PGNAnalyzer(client).analyze("1. e4 e5 *")
     assert error.value is failure
     assert client.evaluate.call_count == failure_index + 1
@@ -376,7 +381,7 @@ def test_provider_failures_propagate_without_partial_result(
 @pytest.mark.parametrize("best_move", [None, "", "not-uci", "0000", "e2e5", "a7a6"])
 def test_invalid_evaluator_bestmove_is_not_silently_used(make_evaluator, best_move):
     client = make_evaluator(["e4"], best_moves={0: best_move})
-    with pytest.raises(StockfishAPIError, match="best move"):
+    with pytest.raises(StockfishEngineError, match="best move"):
         PGNAnalyzer(client).analyze("1. e4 *")
     assert client.calls == [chess.STARTING_FEN]
 

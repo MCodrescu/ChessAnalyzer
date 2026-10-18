@@ -1,17 +1,51 @@
-"""Stockfish Online transport, isolated from PGN replay and configuration I/O."""
+"""Local Stockfish subprocess management using python-chess's UCI transport."""
 
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from shutil import which
+from time import perf_counter
 from types import TracebackType
 
 import chess
-import requests
+import chess.engine
 
 from chess_analyzer.config import Settings
-from chess_analyzer.models import PositionEvaluation, StockfishAPIError
+from chess_analyzer.models import PositionEvaluation, StockfishEngineError
+
+
+@dataclass(frozen=True, slots=True)
+class EngineStatistics:
+    """Cumulative searches attempted and wall time spent searching (not startup)."""
+
+    positions: int
+    search_seconds: float
+
+
+def resolve_stockfish_path(configured: str | None = None) -> str:
+    """Find an executable without downloading anything or invoking a shell.
+
+    An explicitly configured executable never silently falls back to another.
+    Raises StockfishEngineError with installation guidance if none is executable.
+    """
+    candidates = (
+        [configured]
+        if configured is not None
+        else ["stockfish", "/usr/games/stockfish", "/usr/bin/stockfish"]
+    )
+    for candidate in candidates:
+        executable = which(str(Path(candidate).expanduser()))
+        if executable and Path(executable).is_file() and os.access(executable, os.X_OK):
+            return executable
+    raise StockfishEngineError(
+        "Stockfish executable not found or not executable. On Ubuntu/Debian run "
+        "'sudo apt-get update && sudo apt-get install -y stockfish', or set "
+        "STOCKFISH_PATH to a trusted executable (often /usr/games/stockfish)."
+    )
 
 
 def terminal_evaluation(board: chess.Board) -> PositionEvaluation | None:
-    """Return local automatic-game-end scores, retaining board history.
+    """Score automatic game ends locally, retaining any available board history.
 
     Claimable threefold/fifty-move draws are not assumed to have been claimed.
     """
@@ -23,27 +57,28 @@ def terminal_evaluation(board: chess.Board) -> PositionEvaluation | None:
     return PositionEvaluation(cp=0, terminal_result=outcome.result())
 
 
-class StockfishOnlineClient:
-    """Synchronous authenticated provider client using shared Settings.
-
-    Numeric provider evaluations are interpreted as White-relative pawn units.
-    The API documentation explicitly defines the mate sign but is less explicit
-    about numeric perspective/units; live verification is recommended.
+class StockfishClient:
+    """Evaluate standard-chess positions with one owned, reusable UCI process.
 
     Args:
-        settings: Validated, centrally loaded application configuration.
-        session: Optional reusable session owned and closed by the caller.
+        settings: Validated engine path, search limits, and resource limits.
 
-    Use as a context manager or call close() to close an internally owned session.
-    Instances are not intended for concurrent use across threads.
+    Startup is lazy: entering the context or the first nonterminal evaluation
+    starts the engine. Always use a context manager or call close(). Batches run
+    sequentially on this same process, retaining its hash table. Configure engine
+    threads rather than parallel HTTP workers. Public methods must not be called
+    concurrently on the same client. A closed/failed client cannot be reused.
     """
 
-    def __init__(self, settings: Settings, session: requests.Session | None = None):
+    def __init__(self, settings: Settings):
         self.settings = settings
-        self._session = session if session is not None else requests.Session()
-        self._owns_session = session is None
+        self._engine: chess.engine.SimpleEngine | None = None
+        self._closed = False
+        self._positions = 0
+        self._search_seconds = 0.0
 
-    def __enter__(self) -> "StockfishOnlineClient":
+    def __enter__(self) -> "StockfishClient":
+        self._start()
         return self
 
     def __exit__(
@@ -54,100 +89,133 @@ class StockfishOnlineClient:
     ) -> None:
         self.close()
 
+    def _check_open(self) -> None:
+        if self._closed:
+            raise StockfishEngineError(
+                "Stockfish client is closed; create a new client."
+            )
+
+    def _start(self) -> chess.engine.SimpleEngine:
+        self._check_open()
+        if self._engine is None:
+            try:
+                executable = resolve_stockfish_path(self.settings.stockfish_path)
+                # A list treats paths with spaces as one executable, never a command.
+                self._engine = chess.engine.SimpleEngine.popen_uci(
+                    [executable], timeout=self.settings.engine_timeout_seconds
+                )
+                self._engine.configure(
+                    {"Threads": self.settings.threads, "Hash": self.settings.hash_mb}
+                )
+            except (OSError, TimeoutError, chess.engine.EngineError) as error:
+                self.close()
+                raise StockfishEngineError(
+                    "Unable to start/configure Stockfish. Check STOCKFISH_PATH, "
+                    "engine compatibility, thread/hash limits, and timeout."
+                ) from error
+            except BaseException:
+                self.close()
+                raise
+        return self._engine
+
     def close(self) -> None:
-        """Close only an internally owned HTTP session."""
-        if self._owns_session:
-            self._session.close()
+        """Idempotently quit the owned engine; force transport cleanup if needed.
 
-    def evaluate(self, fen: str) -> PositionEvaluation:
-        """Evaluate a standard-chess FEN or resolve a terminal board locally.
-
-        Args:
-            fen: A valid standard-chess FEN. Repetition history is unavailable.
-
-        Returns:
-            White-relative score and legal best move (unless terminal).
-
-        Raises:
-            ValueError: The FEN is invalid.
-            StockfishAPIError: HTTP, provider, or response validation fails.
-
-        Nonterminal positions are sent to the provider over HTTPS with the API
-        key in the query. Redirects and automatic retries are not enabled.
+        Shutdown failures from a dead/unresponsive engine are handled by closing
+        its transport so they do not mask the original analysis error.
         """
+        self._closed = True
+        engine, self._engine = self._engine, None
+        if engine is not None:
+            try:
+                engine.quit()
+            except (OSError, TimeoutError, chess.engine.EngineError):
+                pass  # Forced cleanup below also covers a crashed or hung engine.
+            finally:
+                engine.close()
+
+    @property
+    def statistics(self) -> EngineStatistics:
+        """Return attempted search count and elapsed search time, even on failure."""
+        return EngineStatistics(self._positions, self._search_seconds)
+
+    @staticmethod
+    def _board(fen: str) -> chess.Board:
         board = chess.Board(fen)
         if not board.is_valid():
             raise ValueError("FEN must describe a valid standard-chess position.")
+        return board
+
+    def evaluate_many(self, fens: list[str]) -> list[PositionEvaluation]:
+        """Validate all FENs first, then search in input order on the same engine.
+
+        Empty/terminal-only batches need no engine. Failure raises immediately;
+        no partial batch is returned and subsequent positions are not searched.
+        """
+        self._check_open()
+        boards = [self._board(fen) for fen in fens]
+        return [self._evaluate_board(board) for board in boards]
+
+    def evaluate(self, fen: str) -> PositionEvaluation:
+        """Return White-relative centipawns/mate and a legal best move for a FEN.
+
+        Terminal boards are scored locally. FENs cannot convey repetition history.
+        Search stops at the first of the configured depth/time limits. The time
+        limit is an engine search budget, not an exact total wall-time guarantee.
+
+        Raises:
+            ValueError: The FEN is invalid.
+            StockfishEngineError: Startup, protocol, timeout, or result failure.
+        """
+        self._check_open()
+        return self._evaluate_board(self._board(fen))
+
+    def _evaluate_board(self, board: chess.Board) -> PositionEvaluation:
         terminal = terminal_evaluation(board)
         if terminal is not None:
             return terminal
+        engine = self._start()
+        started = perf_counter()
+        self._positions += 1
         try:
-            response = self._session.get(
-                self.settings.stockfish_api_url,
-                params={
-                    "fen": fen,
-                    "depth": self.settings.analysis_depth,
-                    "key": self.settings.stockfish_api_key,
-                },
-                timeout=self.settings.request_timeout_seconds,
-                allow_redirects=False,
+            info = engine.analyse(
+                board,
+                chess.engine.Limit(
+                    depth=self.settings.analysis_depth,
+                    time=self.settings.analysis_time_seconds,
+                ),
+                info=chess.engine.INFO_SCORE | chess.engine.INFO_PV,
             )
-        except requests.Timeout:
-            raise StockfishAPIError("Stockfish request timed out.") from None
-        except requests.RequestException:
-            # Request exceptions commonly include the credential-bearing URL.
-            raise StockfishAPIError("Unable to contact Stockfish Online.") from None
-        try:
-            if not 200 <= response.status_code < 300:
-                raise StockfishAPIError(
-                    f"Stockfish Online returned HTTP {response.status_code}."
-                )
-            try:
-                payload = response.json()
-            except ValueError:
-                raise StockfishAPIError("Stockfish returned invalid JSON.") from None
-            return self._parse_evaluation(payload, board)
+            return self._parse_evaluation(info, board)
+        except (OSError, TimeoutError, chess.engine.EngineError) as error:
+            self.close()
+            raise StockfishEngineError(
+                "Stockfish analysis failed or timed out; the engine has been closed. "
+                "Check available resources and STOCKFISH_TIMEOUT_SECONDS."
+            ) from error
+        except BaseException:
+            self.close()
+            raise
         finally:
-            response.close()
+            self._search_seconds += perf_counter() - started
 
     @staticmethod
-    def _parse_evaluation(payload: object, board: chess.Board) -> PositionEvaluation:
-        if not isinstance(payload, dict):
-            raise StockfishAPIError("Stockfish returned an invalid response object.")
-        if payload.get("success") is not True:
-            # Do not echo provider error bodies, which may contain request URLs.
-            raise StockfishAPIError("Stockfish Online did not complete the analysis.")
-        raw_move = payload.get("bestmove")
-        if not isinstance(raw_move, str):
-            raise StockfishAPIError("Stockfish response has no best move.")
-        parts = raw_move.split()
-        if len(parts) < 2 or parts[0] != "bestmove":
-            raise StockfishAPIError("Stockfish returned an invalid best move.")
-        try:
-            best_move = chess.Move.from_uci(parts[1])
-        except ValueError:
-            raise StockfishAPIError(
-                "Stockfish returned an invalid best move."
-            ) from None
-        if best_move not in board.legal_moves:
-            raise StockfishAPIError("Stockfish returned an illegal best move.")
-
-        # Documentation prose uses 'eval'; the documented response uses 'evaluation'.
-        evaluation = payload.get("evaluation", payload.get("eval"))
-        mate = payload.get("mate")
-        if mate is not None:
-            if type(mate) is not int or mate == 0 or evaluation is not None:
-                raise StockfishAPIError("Stockfish returned an invalid mate score.")
-            return PositionEvaluation(mate=mate, best_move_uci=best_move.uci())
-        if isinstance(evaluation, bool) or not isinstance(evaluation, (int, float)):
-            raise StockfishAPIError("Stockfish response has no valid numeric score.")
-        try:
-            pawn_score = Decimal(str(evaluation))
-            if not pawn_score.is_finite():
-                raise InvalidOperation
-            cp = int((pawn_score * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-        except (InvalidOperation, ValueError, OverflowError):
-            raise StockfishAPIError(
-                "Stockfish returned an invalid numeric score."
-            ) from None
-        return PositionEvaluation(cp=cp, best_move_uci=best_move.uci())
+    def _parse_evaluation(
+        info: chess.engine.InfoDict, board: chess.Board
+    ) -> PositionEvaluation:
+        pov = info.get("score")
+        pv = info.get("pv", [])
+        if not isinstance(pov, chess.engine.PovScore):
+            raise StockfishEngineError("Stockfish returned no valid score.")
+        if not pv or pv[0] not in board.legal_moves:
+            raise StockfishEngineError("Stockfish returned no legal best move.")
+        score = pov.white()
+        if score.is_mate():
+            mate = score.mate()
+            if mate is None or mate == 0:
+                raise StockfishEngineError("Stockfish returned an invalid mate score.")
+            return PositionEvaluation(mate=mate, best_move_uci=pv[0].uci())
+        cp = score.score()
+        if cp is None:
+            raise StockfishEngineError("Stockfish returned no centipawn score.")
+        return PositionEvaluation(cp=cp, best_move_uci=pv[0].uci())

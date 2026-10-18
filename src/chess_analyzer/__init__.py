@@ -7,9 +7,9 @@ from chess_analyzer.models import (
     InvalidPGNError,
     MoveAnalysis,
     PositionEvaluation,
-    StockfishAPIError,
+    StockfishEngineError,
 )
-from chess_analyzer.stockfish_client import StockfishOnlineClient
+from chess_analyzer.stockfish_client import StockfishClient
 
 __all__ = [
     "ConfigurationError",
@@ -19,7 +19,7 @@ __all__ = [
     "PGNAnalyzer",
     "PositionEvaluation",
     "Settings",
-    "StockfishAPIError",
-    "StockfishOnlineClient",
+    "StockfishClient",
+    "StockfishEngineError",
     "load_settings",
 ]

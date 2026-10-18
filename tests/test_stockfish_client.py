@@ -1,244 +1,123 @@
-"""Provider contract tests using only injected, spec-constrained HTTP doubles."""
+"""UCI boundary, native score conversion, discovery, and process ownership."""
 
-import traceback
+from dataclasses import replace
 from unittest.mock import Mock
 
 import chess
+import chess.engine
 import pytest
-import requests
 
 from chess_analyzer import stockfish_client
-from chess_analyzer.models import PositionEvaluation, StockfishAPIError
-from chess_analyzer.stockfish_client import StockfishOnlineClient
+from chess_analyzer.models import PositionEvaluation, StockfishEngineError
+from chess_analyzer.stockfish_client import StockfishClient, resolve_stockfish_path
+
+
+def engine_info(board=None, score=None):
+    board = board if board is not None else chess.Board()
+    return {
+        "score": chess.engine.PovScore(
+            score if score is not None else chess.engine.Cp(25), board.turn
+        ),
+        "pv": [next(iter(board.legal_moves))],
+    }
 
 
 @pytest.fixture
-def http(settings):
-    response = Mock(spec=requests.Response)
-    response.status_code = 200
-    response.json.return_value = {
-        "success": True,
-        "evaluation": 0.25,
-        "mate": None,
-        "bestmove": "bestmove e2e4 ponder e7e5",
-    }
-    session = Mock(spec=requests.Session)
-    session.get.return_value = response
-    return StockfishOnlineClient(settings, session=session), session, response
-
-
-def test_exact_request_contract_and_response_cleanup(http, settings):
-    client, session, response = http
-    evaluation = client.evaluate(chess.STARTING_FEN)
-    assert client.settings is settings
-    session.get.assert_called_once_with(
-        "https://stockfish.online/api/s/v2.php",
-        params={
-            "fen": chess.STARTING_FEN,
-            "depth": 9,
-            "key": settings.stockfish_api_key,
-        },
-        timeout=4.25,
-        allow_redirects=False,
+def engine_boundary(monkeypatch):
+    engine = Mock(spec=chess.engine.SimpleEngine)
+    engine.analyse.side_effect = lambda board, limit, **kwargs: engine_info(board)
+    factory = Mock(return_value=engine)
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", factory)
+    monkeypatch.setattr(
+        stockfish_client,
+        "resolve_stockfish_path",
+        Mock(return_value="/engine/stockfish"),
     )
-    assert evaluation == PositionEvaluation(cp=25, best_move_uci="e2e4")
-    response.close.assert_called_once_with()
+    return engine, factory
 
 
-@pytest.mark.parametrize(
-    ("score", "cp"),
-    [(0, 0), (1, 100), (-2, -200), (0.29, 29), (1.005, 101), (-1.005, -101)],
-)
-def test_pawn_scores_use_decimal_half_up_rounding(http, score, cp):
-    client, _, response = http
-    response.json.return_value["evaluation"] = score
-    assert client.evaluate(chess.STARTING_FEN).cp == cp
-
-
-def test_eval_compatibility_fallback(http):
-    client, _, response = http
-    payload = response.json.return_value
-    del payload["evaluation"]
-    payload["eval"] = -0.75
-    assert client.evaluate(chess.STARTING_FEN).cp == -75
-
-
-def test_evaluation_field_takes_precedence_over_eval(http):
-    client, _, response = http
-    response.json.return_value["eval"] = -99
-    assert client.evaluate(chess.STARTING_FEN).cp == 25
-
-
-@pytest.mark.parametrize("mate", [1, 7, -1, -8])
-def test_signed_mate_scores_remain_mates(http, mate):
-    client, _, response = http
-    response.json.return_value.update(evaluation=None, mate=mate)
-    assert client.evaluate(chess.STARTING_FEN) == PositionEvaluation(
-        mate=mate, best_move_uci="e2e4"
+def test_one_process_reused_for_all_evaluations(settings, engine_boundary):
+    engine, factory = engine_boundary
+    settings = replace(settings, threads=2, hash_mb=128)
+    with StockfishClient(settings) as client:
+        assert client.evaluate(chess.STARTING_FEN).cp == 25
+        assert len(client.evaluate_many([chess.STARTING_FEN] * 3)) == 3
+        assert client.statistics.positions == 4
+        assert client.statistics.search_seconds >= 0
+        assert client._engine is engine
+    factory.assert_called_once_with(
+        ["/engine/stockfish"], timeout=settings.engine_timeout_seconds
     )
+    engine.configure.assert_called_once_with({"Threads": 2, "Hash": 128})
+    assert engine.analyse.call_count == 4
+    engine.quit.assert_called_once_with()
+    engine.close.assert_called_once_with()
+    client.close()
+    assert engine.quit.call_count == 1
 
 
-@pytest.mark.parametrize(
-    ("mate", "evaluation"),
-    [(0, None), (True, None), (False, None), (1.0, None), ("2", None), (2, 0.5)],
-)
-def test_invalid_or_conflicting_mate_scores_are_rejected(http, mate, evaluation):
-    client, _, response = http
-    response.json.return_value.update(mate=mate, evaluation=evaluation)
-    with pytest.raises(StockfishAPIError, match="mate score"):
-        client.evaluate(chess.STARTING_FEN)
-    response.close.assert_called_once_with()
+@pytest.mark.parametrize("time_cap", [None, 0.01, 0.5])
+def test_search_limits_and_native_centipawns(settings, engine_boundary, time_cap):
+    engine, _ = engine_boundary
+    engine.analyse.return_value = engine_info()
+    engine.analyse.side_effect = None
+    with StockfishClient(replace(settings, analysis_time_seconds=time_cap)) as client:
+        assert client.evaluate(chess.STARTING_FEN).cp == 25  # Never multiply by 100.
+    args, kwargs = engine.analyse.call_args
+    assert args[0].fen() == chess.STARTING_FEN
+    assert args[1].depth == settings.analysis_depth
+    assert args[1].time == time_cap
+    assert kwargs == {"info": chess.engine.INFO_SCORE | chess.engine.INFO_PV}
 
 
+@pytest.mark.parametrize("turn", [chess.WHITE, chess.BLACK])
 @pytest.mark.parametrize(
     "score",
-    [None, True, False, "0.25", [], {}, float("nan"), float("inf"), -float("inf")],
-)
-def test_invalid_numeric_score_is_rejected(http, score):
-    client, _, response = http
-    response.json.return_value["evaluation"] = score
-    with pytest.raises(StockfishAPIError, match="score"):
-        client.evaluate(chess.STARTING_FEN)
-    response.close.assert_called_once_with()
-
-
-def test_missing_numeric_score_is_rejected(http):
-    client, _, response = http
-    del response.json.return_value["evaluation"]
-    with pytest.raises(StockfishAPIError, match="score"):
-        client.evaluate(chess.STARTING_FEN)
-
-
-@pytest.mark.parametrize("payload", [None, [], "body", 1, {}, {"success": 1}])
-def test_malformed_payload_is_rejected(http, payload):
-    client, _, response = http
-    response.json.return_value = payload
-    with pytest.raises(StockfishAPIError):
-        client.evaluate(chess.STARTING_FEN)
-    response.close.assert_called_once_with()
-
-
-@pytest.mark.parametrize(
-    "move",
     [
-        None,
-        123,
-        "",
-        "e2e4",
-        "bestmove",
-        "move e2e4",
-        "bestmove nope",
-        "bestmove e2e5",
-        "bestmove a7a6",
-        "bestmove 0000",
-        "bestmove (none)",
+        chess.engine.Cp(37),
+        chess.engine.Cp(-18),
+        chess.engine.Mate(3),
+        chess.engine.Mate(-2),
     ],
 )
-def test_missing_malformed_or_illegal_bestmove_is_rejected(http, move):
-    client, _, response = http
-    response.json.return_value["bestmove"] = move
-    with pytest.raises(StockfishAPIError, match="best move"):
-        client.evaluate(chess.STARTING_FEN)
-    response.close.assert_called_once_with()
+def test_all_scores_are_white_relative(settings, engine_boundary, turn, score):
+    engine, _ = engine_boundary
+    board = chess.Board()
+    if turn == chess.BLACK:
+        board.push_san("e4")
+    engine.analyse.side_effect = None
+    engine.analyse.return_value = engine_info(board, score)
+    with StockfishClient(settings) as client:
+        result = client.evaluate(board.fen())
+    expected = score if turn == chess.WHITE else -score
+    assert result.cp == expected.score()
+    assert result.mate == expected.mate()
+    assert chess.Move.from_uci(result.best_move_uci) in board.legal_moves
 
 
-def test_absent_bestmove_is_rejected(http):
-    client, _, response = http
-    del response.json.return_value["bestmove"]
-    with pytest.raises(StockfishAPIError, match="best move"):
-        client.evaluate(chess.STARTING_FEN)
-
-
-@pytest.mark.parametrize("status", [199, 301, 302, 307, 400, 401, 429, 500, 503])
-def test_http_errors_and_redirects_are_not_parsed_or_retried(http, status):
-    client, session, response = http
-    response.status_code = status
-    with pytest.raises(StockfishAPIError, match=f"HTTP {status}"):
-        client.evaluate(chess.STARTING_FEN)
-    session.get.assert_called_once()
-    response.json.assert_not_called()
-    response.close.assert_called_once_with()
-
-
-def test_invalid_json_is_wrapped_and_response_closed(http):
-    client, _, response = http
-    response.json.side_effect = ValueError("raw-provider-body")
-    with pytest.raises(StockfishAPIError, match="invalid JSON"):
-        client.evaluate(chess.STARTING_FEN)
-    response.close.assert_called_once_with()
-
-
-@pytest.mark.parametrize(
-    ("exception_type", "message"),
-    [
-        (requests.Timeout, "timed out"),
-        (requests.ConnectionError, "Unable to contact"),
-        (requests.RequestException, "Unable to contact"),
-    ],
-)
-def test_transport_errors_are_sanitized_and_not_retried(http, exception_type, message):
-    client, session, response = http
-    session.get.side_effect = exception_type("raw-credential-bearing-url")
-    with pytest.raises(StockfishAPIError, match=message):
-        client.evaluate(chess.STARTING_FEN)
-    session.get.assert_called_once()
-    response.close.assert_not_called()
-
-
-@pytest.mark.parametrize("failure", ["timeout", "connection", "status", "json", "body"])
-def test_formatted_traceback_excludes_key_and_untrusted_details(
-    http, settings, failure
-):
-    client, session, response = http
-    raw = (
-        "RAW-PROVIDER-OR-EXCEPTION "
-        f"https://example.invalid/?key={settings.stockfish_api_key}"
-    )
-    if failure == "timeout":
-        session.get.side_effect = requests.Timeout(raw)
-    elif failure == "connection":
-        session.get.side_effect = requests.ConnectionError(raw)
-    elif failure == "status":
-        response.status_code = 403
-        response.text = raw
-    elif failure == "json":
-        response.json.side_effect = ValueError(raw)
-    else:
-        response.json.return_value = {"success": False, "error": raw}
-    with pytest.raises(StockfishAPIError) as error:
-        client.evaluate(chess.STARTING_FEN)
-    formatted = "".join(traceback.format_exception(error.value))
-    assert settings.stockfish_api_key not in formatted
-    assert "RAW-PROVIDER-OR-EXCEPTION" not in formatted
-    assert "https://example.invalid" not in formatted
-
-
-@pytest.mark.parametrize("fen", ["not a fen", "8/8/8/8/8/8/8/8 w - - 0 1"])
-def test_invalid_fen_is_rejected_before_http(http, fen):
-    client, session, _ = http
+@pytest.mark.parametrize("fen", ["invalid", "8/8/8/8/8/8/8/8 w - - 0 1"])
+def test_entire_batch_validated_before_engine_start(settings, engine_boundary, fen):
+    _, factory = engine_boundary
+    client = StockfishClient(settings)
     with pytest.raises(ValueError):
-        client.evaluate(fen)
-    session.get.assert_not_called()
+        client.evaluate_many([chess.STARTING_FEN, fen])
+    factory.assert_not_called()
 
 
 @pytest.mark.parametrize(
     ("fen", "expected"),
     [
         (
-            "7k/6Q1/5K2/8/8/8/8/8 b - - 0 1",
-            PositionEvaluation(mate=0, terminal_result="1-0"),
-        ),
-        (
-            "8/8/8/8/8/5k2/6q1/7K w - - 0 1",
-            PositionEvaluation(mate=0, terminal_result="0-1"),
+            "7k/8/8/8/8/8/8/K7 w - - 0 1",
+            PositionEvaluation(cp=0, terminal_result="1/2-1/2"),
         ),
         (
             "7k/5K2/6Q1/8/8/8/8/8 b - - 0 1",
             PositionEvaluation(cp=0, terminal_result="1/2-1/2"),
         ),
         (
-            "7k/8/8/8/8/8/8/K7 w - - 0 1",
-            PositionEvaluation(cp=0, terminal_result="1/2-1/2"),
+            "7k/6Q1/5K2/8/8/8/8/8 b - - 0 1",
+            PositionEvaluation(mate=0, terminal_result="1-0"),
         ),
         (
             "7k/8/8/8/8/8/R7/K7 w - - 150 76",
@@ -246,43 +125,190 @@ def test_invalid_fen_is_rejected_before_http(http, fen):
         ),
     ],
 )
-def test_automatic_terminal_positions_are_resolved_locally(http, fen, expected):
-    client, session, _ = http
-    assert chess.Board(fen).is_valid()
-    assert client.evaluate(fen) == expected
-    session.get.assert_not_called()
-
-
-def test_injected_session_is_never_closed_even_on_context_exception(http):
-    client, session, _ = http
-    with pytest.raises(RuntimeError, match="caller failure"), client as entered:
-        assert entered is client
-        raise RuntimeError("caller failure")
-    client.close()
-    session.close.assert_not_called()
-
-
-@pytest.mark.parametrize("raise_in_context", [False, True])
-def test_owned_session_is_closed_on_context_exit(
-    monkeypatch, settings, raise_in_context
+def test_terminal_and_empty_batches_need_no_engine(
+    settings, engine_boundary, fen, expected
 ):
-    session = Mock(spec=requests.Session)
-    factory = Mock(return_value=session)
-    monkeypatch.setattr(stockfish_client.requests, "Session", factory)
-    if raise_in_context:
-        with pytest.raises(RuntimeError), StockfishOnlineClient(settings):
-            raise RuntimeError("caller failure")
-    else:
-        with StockfishOnlineClient(settings) as client:
-            assert client.settings is settings
-    factory.assert_called_once_with()
-    session.close.assert_called_once_with()
+    _, factory = engine_boundary
+    client = StockfishClient(settings)
+    assert client.evaluate_many([]) == []
+    assert client.evaluate(fen) == expected
+    assert client.evaluate_many([fen]) == [expected]
+    assert client.statistics.positions == 0
+    client.close()
+    factory.assert_not_called()
 
 
-def test_owned_session_can_be_closed_explicitly(monkeypatch, settings):
-    session = Mock(spec=requests.Session)
+def test_batch_order_and_black_sign(settings, engine_boundary):
+    board = chess.Board()
+    fens = [board.fen()]
+    for san in ("e4", "e5", "Nf3"):
+        board.push_san(san)
+        fens.append(board.fen())
+    with StockfishClient(settings) as client:
+        assert [result.cp for result in client.evaluate_many(fens)] == [
+            25,
+            -25,
+            25,
+            -25,
+        ]
+    engine, _ = engine_boundary
+    assert [call.args[0].fen() for call in engine.analyse.call_args_list] == fens
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        TimeoutError(),
+        OSError("failed"),
+        chess.engine.EngineError("protocol"),
+        chess.engine.EngineTerminatedError("crashed"),
+    ],
+)
+def test_analysis_failure_stops_batch_and_closes(settings, engine_boundary, error):
+    engine, _ = engine_boundary
+    engine.analyse.side_effect = [engine_info(), error, engine_info()]
+    with StockfishClient(settings) as client:
+        with pytest.raises(StockfishEngineError, match="failed or timed out"):
+            client.evaluate_many([chess.STARTING_FEN] * 3)
+        assert client.statistics.positions == 2
+        with pytest.raises(StockfishEngineError, match="closed"):
+            client.evaluate(chess.STARTING_FEN)
+    assert engine.analyse.call_count == 2
+    engine.quit.assert_called_once()
+    engine.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "error", [OSError(), TimeoutError(), chess.engine.EngineError()]
+)
+def test_startup_failures_are_wrapped(settings, engine_boundary, error):
+    engine, factory = engine_boundary
+    factory.side_effect = error
+    client = StockfishClient(settings)
+    with pytest.raises(StockfishEngineError, match="start/configure"):
+        client.__enter__()
+    assert client._engine is None
+    engine.analyse.assert_not_called()
+
+
+def test_configuration_failure_closes_started_engine(settings, engine_boundary):
+    engine, _ = engine_boundary
+    engine.configure.side_effect = chess.engine.EngineError("unsupported option")
+    with pytest.raises(StockfishEngineError, match="thread/hash"):
+        StockfishClient(settings).__enter__()
+    engine.quit.assert_called_once()
+    engine.close.assert_called_once()
+
+
+def test_discovery_failure_closes_client_without_starting(
+    settings, engine_boundary, monkeypatch
+):
+    _, factory = engine_boundary
     monkeypatch.setattr(
-        stockfish_client.requests, "Session", Mock(return_value=session)
+        stockfish_client,
+        "resolve_stockfish_path",
+        Mock(side_effect=StockfishEngineError("executable not found")),
     )
-    StockfishOnlineClient(settings).close()
-    session.close.assert_called_once_with()
+    client = StockfishClient(settings)
+    with pytest.raises(StockfishEngineError, match="executable not found"):
+        client.__enter__()
+    with pytest.raises(StockfishEngineError, match="closed"):
+        client.__enter__()
+    factory.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error", [TimeoutError(), chess.engine.EngineTerminatedError()]
+)
+def test_shutdown_forces_cleanup_without_masking_original_error(
+    settings, engine_boundary, error
+):
+    engine, _ = engine_boundary
+    engine.quit.side_effect = error
+    with pytest.raises(ValueError, match="original"):
+        with StockfishClient(settings):
+            raise ValueError("original")
+    engine.close.assert_called_once()
+
+
+def test_interrupt_during_search_closes_engine(settings, engine_boundary):
+    engine, _ = engine_boundary
+    engine.analyse.side_effect = KeyboardInterrupt
+    client = StockfishClient(settings)
+    with pytest.raises(KeyboardInterrupt):
+        client.evaluate(chess.STARTING_FEN)
+    engine.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "info",
+    [
+        {},
+        {"pv": [chess.Move.from_uci("e2e4")]},
+        {"score": chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE)},
+        {
+            "score": chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE),
+            "pv": [chess.Move.from_uci("e2e5")],
+        },
+        {
+            "score": chess.engine.PovScore(chess.engine.Mate(0), chess.WHITE),
+            "pv": [chess.Move.from_uci("e2e4")],
+        },
+    ],
+)
+def test_invalid_engine_results_raise_and_close(settings, engine_boundary, info):
+    engine, _ = engine_boundary
+    engine.analyse.side_effect = None
+    engine.analyse.return_value = info
+    client = StockfishClient(settings)
+    with pytest.raises(StockfishEngineError):
+        client.evaluate(chess.STARTING_FEN)
+    engine.close.assert_called_once()
+
+
+def test_closed_client_rejects_even_empty_or_terminal_work(settings, engine_boundary):
+    client = StockfishClient(settings)
+    client.close()
+    for action in (
+        client.__enter__,
+        lambda: client.evaluate_many([]),
+        lambda: client.evaluate(chess.STARTING_FEN),
+    ):
+        with pytest.raises(StockfishEngineError, match="closed"):
+            action()
+
+
+def test_discover_path_and_linux_fallback(monkeypatch, tmp_path):
+    binary = tmp_path / "stockfish"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    lookup = Mock(side_effect=[None, str(binary)])
+    monkeypatch.setattr(stockfish_client, "which", lookup)
+    assert resolve_stockfish_path() == str(binary)
+    assert [call.args[0] for call in lookup.call_args_list] == [
+        "stockfish",
+        "/usr/games/stockfish",
+    ]
+
+
+def test_explicit_path_with_spaces_is_preserved(tmp_path):
+    binary = tmp_path / "stockfish with spaces"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    assert resolve_stockfish_path(str(binary)) == str(binary)
+
+
+def test_explicit_missing_path_never_falls_back(monkeypatch):
+    lookup = Mock(return_value=None)
+    monkeypatch.setattr(stockfish_client, "which", lookup)
+    with pytest.raises(StockfishEngineError, match="apt-get install"):
+        resolve_stockfish_path("/missing/stockfish")
+    lookup.assert_called_once_with("/missing/stockfish")
+
+
+def test_nonexecutable_file_rejected(tmp_path):
+    binary = tmp_path / "not-executable"
+    binary.write_text("not a binary")
+    binary.chmod(0o644)
+    with pytest.raises(StockfishEngineError, match="not executable"):
+        resolve_stockfish_path(str(binary))

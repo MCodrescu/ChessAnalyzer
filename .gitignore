@@ -6,8 +6,15 @@ build/
 dist/
 .pytest_cache/
 .ruff_cache/
+.ipynb_checkpoints/
 .coverage
 htmlcov/
 .env
 .env.*
 !.env.example
+
+# Optional manually downloaded engine assets; use the system package by default.
+/engines/
+/bin/stockfish*
+/stockfish*
+*.nnue

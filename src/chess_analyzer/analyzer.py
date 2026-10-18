@@ -1,7 +1,7 @@
 """PGN validation, mainline replay, and moving-player loss estimation."""
 
 from io import StringIO
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import chess
 import chess.pgn
@@ -12,7 +12,7 @@ from chess_analyzer.models import (
     InvalidPGNError,
     MoveAnalysis,
     PositionEvaluation,
-    StockfishAPIError,
+    StockfishEngineError,
 )
 from chess_analyzer.stockfish_client import terminal_evaluation
 
@@ -24,6 +24,15 @@ class PositionEvaluator(Protocol):
 
     def evaluate(self, fen: str) -> PositionEvaluation:
         """Return a White-relative score and best move for the given FEN."""
+        ...
+
+
+@runtime_checkable
+class BatchPositionEvaluator(Protocol):
+    """Optional ordered-batch capability for position evaluators."""
+
+    def evaluate_many(self, fens: list[str]) -> list[PositionEvaluation]:
+        """Return one evaluation per FEN, in the same order as the input."""
         ...
 
 
@@ -67,20 +76,32 @@ class PGNAnalyzer:
 
         Supports standard chess including SetUp/FEN starts. Comments and side
         variations do not contribute moves. Valid games without moves return an
-        empty result. Validation/replay completes before any provider requests.
+        empty result. Validation/replay completes before any engine searches.
 
         Raises:
             InvalidPGNError: Input is empty, has multiple games, is an unsupported
                 variant, or cannot be legally replayed to its end.
-            StockfishAPIError: The provider fails or returns an invalid best move.
+            StockfishEngineError: Evaluation fails or returns an invalid best move.
 
         Makes at most n+1 evaluations for n moves, skipping local terminal boards.
+        Uses ordered batch evaluation when supported by the injected evaluator.
         A failure raises rather than returning a misleading partial result.
         """
         game, board = self._parse_game(pgn)
         moves = tuple(game.mainline_moves())
         results: list[MoveAnalysis] = []
-        before = self._evaluate(board) if moves else None
+        evaluations = (
+            self._evaluate_batch(board, moves)
+            if moves and isinstance(self._client, BatchPositionEvaluator)
+            else None
+        )
+        before = (
+            evaluations[0]
+            if evaluations is not None
+            else self._evaluate(board)
+            if moves
+            else None
+        )
         for ply, move in enumerate(moves, start=1):
             assert before is not None
             best_move = self._best_move(before, board)
@@ -90,7 +111,9 @@ class PGNAnalyzer:
             played_san = board.san(move)
             best_san = board.san(best_move)
             board.push(move)
-            after = self._evaluate(board)
+            after = (
+                evaluations[ply] if evaluations is not None else self._evaluate(board)
+            )
             is_best = move == best_move
             delta = None
             loss = None
@@ -120,7 +143,34 @@ class PGNAnalyzer:
             headers=dict(game.headers),
             moves=tuple(results),
             analysis_depth=self._client.settings.analysis_depth,
+            analysis_time_seconds=self._client.settings.analysis_time_seconds,
         )
+
+    def _evaluate_batch(
+        self, board: chess.Board, moves: tuple[chess.Move, ...]
+    ) -> list[PositionEvaluation]:
+        """Collect positions first, retaining history for automatic draw detection."""
+        assert isinstance(self._client, BatchPositionEvaluator)
+        replay = board.copy()
+        fens = []
+        positions = []
+        local: list[PositionEvaluation | None] = []
+        for index in range(len(moves) + 1):
+            terminal = terminal_evaluation(replay)
+            local.append(terminal)
+            if terminal is None:
+                positions.append(index)
+                fens.append(replay.fen())
+            if index < len(moves):
+                replay.push(moves[index])
+        evaluated = self._client.evaluate_many(fens) if fens else []
+        if len(evaluated) != len(fens):
+            raise StockfishEngineError(
+                "Evaluator returned an incomplete position batch."
+            )
+        for index, evaluation in zip(positions, evaluated, strict=True):
+            local[index] = evaluation
+        return [evaluation for evaluation in local if evaluation is not None]
 
     def _evaluate(self, board: chess.Board) -> PositionEvaluation:
         # Preserve history-dependent automatic draws before reducing to a FEN.
@@ -132,11 +182,11 @@ class PGNAnalyzer:
         try:
             move = chess.Move.from_uci(evaluation.best_move_uci or "")
         except ValueError:
-            raise StockfishAPIError(
+            raise StockfishEngineError(
                 "Evaluator returned an invalid best move."
             ) from None
         if move not in board.legal_moves:
-            raise StockfishAPIError("Evaluator returned an illegal best move.")
+            raise StockfishEngineError("Evaluator returned an illegal best move.")
         return move
 
     @staticmethod

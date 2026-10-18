@@ -1,0 +1,14 @@
+.git
+.venv
+.env
+.env.*
+**/__pycache__
+**/*.egg-info
+.pytest_cache
+.ruff_cache
+notebooks
+tests
+engines
+bin/stockfish*
+stockfish*
+**/*.nnue
