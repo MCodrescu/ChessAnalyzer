@@ -84,7 +84,9 @@ test('shows estimated accuracy and a graph synchronized with actual game positio
   await loadReview(page);
   await expect(page.locator('#import-dialog')).not.toBeVisible();
   await expect(page.locator('#white-accuracy')).toHaveText(/\d+\.\d%/);
-  await expect(page.locator('#black-accuracy')).toHaveText('100.0%');
+  await expect(page.locator('#white-accuracy')).toHaveText('87.5%');
+  await expect(page.locator('#black-accuracy')).toHaveText('96.9%');
+  await expect(page.locator('.summary-panel')).toContainText('LICHESS METHOD');
   await expect(page.locator('#white-accuracy-name')).toHaveText(payload.headers.White);
   await expect(page.locator('#white-accuracy-name img')).toHaveCount(0);
   await expect(page.locator('#graph-line')).toHaveAttribute('d', /^M.+L.+L/);

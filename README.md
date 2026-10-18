@@ -55,20 +55,31 @@ without moving the board or the page.
 
 #### Accuracy and evaluation graph
 
-- **Game accuracy** shows a separate estimated percentage for White and Black,
-  computed locally from their analyzed moves. These are **not official
-  Chess.com or Lichess game ratings** and depend on the engine/search settings.
-- Move scores use the [published Lichess winning-chance and move-accuracy
-  formulas](https://lichess.org/page/accuracy): White's estimated win percentage
-  is `100 / (1 + exp(-0.00368208 * cp))`. From the mover's perspective, a positive
-  loss of `L` percentage points gives
-  `clamp(103.1668 * exp(-0.04354 * L) - 3.1669, 0, 100)` accuracy.
-  Engine-best moves and moves with no measured loss score 100. Each player's
-  game estimate is the **arithmetic mean** of their scored moves, **not**
-  Lichess's volatility-weighted/harmonic game calculation.
-- Forced mates and terminal wins map to 100%/0% White winning chances, and
-  terminal draws to 50%. Missing evaluations are excluded; no scored moves
-  display a dash rather than a fabricated accuracy.
+- **Game accuracy** uses the [Lichess accuracy
+  algorithm](https://lichess.org/page/accuracy), verified against
+  [lila revision 06ee345](https://github.com/lichess-org/lila/blob/06ee34552b24fa1a52e749d92fbc3a1ad37a5afb/modules/analyse/src/main/AccuracyPercent.scala),
+  applied to this app's **local Stockfish evaluations**. Scores can differ from
+  lichess.org because engine versions, search limits, and evaluations differ.
+- Winning chances use White-relative evaluations capped at ±1000 centipawns:
+  `50 + 50 * (2 / (1 + exp(-0.00368208 * cp)) - 1)`.
+  Forced mates and terminal wins use the corresponding cap (approximately
+  97.5%/2.5%, not 100%/0%); terminal draws use zero CP / 50% winning chances.
+- For a positive loss `L` of the mover's winning-chance percentage points,
+  move accuracy is
+  `clamp(103.1668100711649 * exp(-0.04354415386753951 * L) - 3.166924740191411 + 1, 0, 100)`.
+  The `+1` is Lichess's uncertainty bonus. No loss scores 100; matching the best
+  move does **not** override an evaluation loss.
+- Game accuracy is the average of a **volatility-weighted mean** and a
+  **harmonic mean**, separately for each color. Window size is
+  `clamp(floor(halfMoves / 10), 2, 8)` positions. The first full window is
+  repeated `windowSize - 2` times before sliding; weights are population
+  standard deviations of winning chances, clamped to `[0.5, 12]`. Harmonic-mean
+  inputs are floored at 1, matching Lichess's implementation.
+- The shared evaluation timeline contains the actual initial position and
+  every actual post-move position, including custom FEN starts. A missing
+  position invalidates any volatility window containing it, without shifting
+  move colors. Games need scored moves for **both** colors to display game
+  accuracy; empty or one-half-move games show dashes, matching Lichess.
 - The **evaluation graph** plots the starting position and each actual move's
   resulting evaluation, always White-relative, regardless of board orientation.
   Positive values favor White. The display is capped at ±10 pawns; mate scores

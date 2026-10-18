@@ -40,12 +40,12 @@
           <p id="error" role="alert" hidden></p>
         </div>
         <section class="panel summary-panel" aria-labelledby="summary-heading">
-          <div class="panel-heading"><h2 id="summary-heading">Game accuracy</h2><span class="small-label" title="Mean move accuracy estimated from local Stockfish winning-chance loss, not an official Chess.com or Lichess rating.">LOCAL ESTIMATE</span></div>
+          <div class="panel-heading"><h2 id="summary-heading">Game accuracy</h2><span class="small-label" title="Lichess accuracy algorithm: volatility-weighted and harmonic means, using local Stockfish evaluations.">LICHESS METHOD</span></div>
           <div class="accuracy-cards">
             <div><span class="accuracy-color"><span class="color-dot white"></span> White</span><strong id="white-accuracy">—</strong><span id="white-accuracy-name">White</span></div>
             <div><span class="accuracy-color"><span class="color-dot black"></span> Black</span><strong id="black-accuracy">—</strong><span id="black-accuracy-name">Black</span></div>
           </div>
-          <p class="accuracy-note muted">Estimated mean move accuracy. Not a Chess.com or Lichess game rating.</p>
+          <p class="accuracy-note muted">Lichess calculation · Local Stockfish search · Scores may differ from lichess.org.</p>
           <div class="panel-heading graph-heading"><h2>Game evaluation</h2><span id="graph-readout" class="small-label">No analyzed moves</span></div>
           <div class="evaluation-chart">
             <svg id="evaluation-graph" viewBox="0 0 600 130" preserveAspectRatio="none" role="img" aria-label="Game evaluation graph. No analyzed moves.">

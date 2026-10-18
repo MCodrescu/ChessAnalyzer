@@ -26,7 +26,7 @@ export class ReviewSummary {
     for (const color of ['white', 'black']) {
       const { accuracy: score, count } = accuracy[color];
       $(`${color}-accuracy`).textContent = score === null ? '—' : `${score.toFixed(1)}%`;
-      $(`${color}-accuracy`).title = `${count} scored ${color} moves. Estimated mean move accuracy.`;
+      $(`${color}-accuracy`).title = `${count} scored ${color} moves. Lichess accuracy algorithm with local Stockfish evaluations; requires scored moves for both colors.`;
       $(`${color}-accuracy-name`).textContent = analysis.headers[color === 'white' ? 'White' : 'Black'] || color;
     }
     this.points = evaluationSeries(analysis.moves);

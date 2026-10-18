@@ -1,37 +1,72 @@
-/** Local estimates, not Chess.com or Lichess game accuracy ratings.
- * Move formulas: https://lichess.org/page/accuracy
- * Game scores here use a simple arithmetic mean, not Lichess's weighting.
+/** Lichess accuracy algorithm applied to this app's local engine evaluations.
+ * Verified against lila revision 06ee34552b24fa1a52e749d92fbc3a1ad37a5afb:
+ * https://github.com/lichess-org/lila/blob/06ee34552b24fa1a52e749d92fbc3a1ad37a5afb/modules/analyse/src/main/AccuracyPercent.scala
+ * WinPercent caps CP at ±1000; scalalib.Maths uses population deviation and
+ * floors harmonic-mean inputs at 1. Engine settings can differ from lichess.org.
  */
 export function whiteWinPercent(evaluation) {
   if (!evaluation) return null;
-  if (evaluation.terminal_result === '1-0') return 100;
-  if (evaluation.terminal_result === '0-1') return 0;
-  if (evaluation.terminal_result === '1/2-1/2') return 50;
-  if (Number.isFinite(evaluation.mate) && evaluation.mate !== 0) return evaluation.mate > 0 ? 100 : 0;
-  if (!Number.isFinite(evaluation.cp)) return null;
-  return 100 / (1 + Math.exp(-0.00368208 * evaluation.cp));
+  let cp = evaluation.cp;
+  if (evaluation.terminal_result === '1-0') cp = 1000;
+  else if (evaluation.terminal_result === '0-1') cp = -1000;
+  else if (evaluation.terminal_result === '1/2-1/2') cp = 0;
+  else if (Number.isFinite(evaluation.mate) && evaluation.mate !== 0) cp = evaluation.mate > 0 ? 1000 : -1000;
+  if (!Number.isFinite(cp)) return null;
+  cp = Math.max(-1000, Math.min(1000, cp));
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+}
+
+function accuracyFromWinPercents(before, after) {
+  if (before === null || after === null) return null;
+  if (after >= before) return 100;
+  const raw = 103.1668100711649 * Math.exp(-0.04354415386753951 * (before - after)) - 3.166924740191411;
+  return Math.max(0, Math.min(100, raw + 1));
 }
 
 /** Estimate one move's accuracy from the mover's loss of winning chances. */
 export function moveAccuracy(move) {
   const before = whiteWinPercent(move.evaluation_before);
   const after = whiteWinPercent(move.evaluation_after);
-  if (before === null || after === null) return null;
-  const loss = Math.max(0, (before - after) * (move.player === 'white' ? 1 : -1));
-  // Independent searches may disagree slightly even for the engine's best move.
-  if (move.is_best_move || loss === 0) return 100;
-  return Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * loss) - 3.1669));
+  return move.player === 'white'
+    ? accuracyFromWinPercents(before, after)
+    : accuracyFromWinPercents(after, before);
 }
 
-/** Mean move accuracy per color; unscored moves and absent players have no score. */
+/** Lichess game accuracy: mean of volatility-weighted and harmonic means.
+ * Use one shared timeline (initial evaluation + every actual post-move eval).
+ * Missing windows are skipped without changing the alternating move colors.
+ * Like Lichess, a game needs scored moves for both colors to have game accuracy.
+ */
 export function gameAccuracy(moves) {
-  const result = {};
+  const result = { white: { accuracy: null, count: 0 }, black: { accuracy: null, count: 0 } };
+  if (!moves.length) return result;
+  const chances = [moves[0].evaluation_before, ...moves.map((move) => move.evaluation_after)].map(whiteWinPercent);
+  const windowSize = Math.max(2, Math.min(8, Math.floor(moves.length / 10)));
+  const samples = { white: [], black: [] };
+  for (let index = 0; index < moves.length; index++) {
+    // Lichess repeats the first full window windowSize - 2 times before sliding.
+    const start = Math.max(0, index - windowSize + 2);
+    const window = chances.slice(start, start + windowSize);
+    if (window.some((chance) => chance === null)) continue;
+    const mean = window.reduce((sum, chance) => sum + chance, 0) / window.length;
+    const deviation = Math.sqrt(window.reduce((sum, chance) => sum + (chance - mean) ** 2, 0) / window.length);
+    const weight = Math.max(0.5, Math.min(12, deviation));
+    const player = index % 2 === 0 ? moves[0].player : moves[0].player === 'white' ? 'black' : 'white';
+    const score = player === 'white'
+      ? accuracyFromWinPercents(chances[index], chances[index + 1])
+      : accuracyFromWinPercents(chances[index + 1], chances[index]);
+    if (score !== null) samples[player].push({ score, weight });
+  }
   for (const player of ['white', 'black']) {
-    const scores = moves.filter((move) => move.player === player).map(moveAccuracy).filter((score) => score !== null);
-    result[player] = {
-      accuracy: scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null,
-      count: scores.length,
-    };
+    result[player].count = samples[player].length;
+  }
+  if (!samples.white.length || !samples.black.length) return result;
+  for (const player of ['white', 'black']) {
+    const scores = samples[player];
+    const weightSum = scores.reduce((sum, { weight }) => sum + weight, 0);
+    const weighted = scores.reduce((sum, { score, weight }) => sum + score * weight, 0) / weightSum;
+    const harmonic = scores.length / scores.reduce((sum, { score }) => sum + 1 / Math.max(1, score), 0);
+    result[player].accuracy = (weighted + harmonic) / 2;
   }
   return result;
 }
