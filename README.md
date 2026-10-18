@@ -35,6 +35,71 @@ never falls back silently. No engine is downloaded or started during imports.
 
 ## Interface
 
+### Django game review
+
+The web application uses Lichess's **Chessground** board and the same local
+analyzer as the CLI/notebook. Paste a PGN, open a PGN file, or load the example;
+select **Analyze game**, then click any move. Left/right arrows navigate moves;
+Home/End jump to the first/last move. The board can be flipped.
+
+```bash
+python -m pip install -e '.[dev]'
+npm ci
+npm run build
+python manage.py runserver 127.0.0.1:8000
+```
+
+Open http://127.0.0.1:8000/. Stockfish must already be installed as described
+above. Node/npm are build-time tools only. All board JavaScript, styles, and
+piece images are served locally; no CDN or Lichess API is used. Rebuild after
+changing frontend dependencies. Build before packaging a wheel so its static
+assets are included. No database or migrations are needed, and PGNs/results are
+not persisted; refreshing clears the review. Export a Chess.com/Lichess game as
+PGN to review it here; automatic account/game fetching remains in the notebook.
+
+- **Before move** shows both choices from the same position: green for the
+  engine best move, blue for the played move (one green arrow when they match).
+- **Played line** shows the actual resulting position and its evaluation.
+- **Best line** previews the position after the recommendation, including
+  castling and promotion. This is a one-move preview, not a searched principal
+  variation; its resulting evaluation is deliberately not inferred.
+- Evaluations favor White when positive. Loss is in centipawns from the moving
+  player's perspective; mate transitions have no numeric CP loss. Depth/time
+  displayed are requested search caps, not achieved depth.
+
+This is a **local-first, synchronous MVP**: requests wait for the complete
+analysis (roughly 20 seconds for 100 half-moves at default limits). Inputs are
+limited to 100,000 characters / 600 half-moves and one running analysis per web
+process; overlapping requests get HTTP 429. Engine resources come exclusively
+from the server's `STOCKFISH_*` environment, not browser input. The web app does
+not automatically load dotenv files; export environment values before starting.
+
+For Codespaces/proxies, set `DJANGO_ALLOWED_HOSTS` to a comma-separated list of
+trusted hostnames, and `DJANGO_CSRF_TRUSTED_ORIGINS` to comma-separated HTTPS
+origins when needed. Do not use wildcard hosts or disable CSRF protection.
+For deployment set `DJANGO_DEBUG=0`, a strong `DJANGO_SECRET_KEY`, and explicit
+hosts/origins; serve collected static files over HTTPS with a production server.
+The existing Dockerfile still runs the CLI, not Django. Do not expose this
+unauthenticated CPU-intensive endpoint publicly: add authentication, rate limits,
+and a background queue with globally bounded engine concurrency first. A web
+worker semaphore is not a cross-process job scheduler. Proxy/worker timeouts
+must accommodate complete analyses; cancelling a browser request does not stop
+an in-progress engine search.
+
+Chessground is **GPL-3.0-or-later**, not permissively licensed. Review
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and upstream requirements before
+distributing/deploying the combined app, including source-availability and
+license/notice obligations. The build preserves upstream license and artwork
+notices. No repository-wide relicensing is performed automatically.
+
+Web validation uses the existing pytest suite plus `npm test` for presentation
+helpers. Browser tests run with `npm run test:browser` after installing the
+Playwright Chromium browser with `npx playwright install chromium`. Linux also
+needs Playwright's system-library prerequisites. Set
+`CHESS_ANALYZER_RUN_ENGINE_TESTS=1` to include the real-engine browser workflow;
+otherwise browser tests mock the analysis response. `CHESS_ANALYZER_PYTHON` can
+override the browser test server's default `.venv/bin/python` interpreter.
+
 Use `StockfishClient(settings)` as a context manager, then pass it to
 `PGNAnalyzer(client).analyze(pgn)`. `load_settings()` reads only the environment;
 `load_settings(path)` optionally loads an explicit dotenv file. Defaults work

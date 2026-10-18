@@ -9,6 +9,7 @@ description = "PGN move-quality analysis using a local Stockfish UCI engine"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "Django>=5.2.8,<5.3",
     "python-chess>=1.999,<2",
     "python-dotenv>=1.0,<2",
 ]
@@ -19,6 +20,9 @@ notebook = ["chess.com>=3.13,<4", "ipykernel>=6,<8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"chess_analyzer.web" = ["templates/**/*.html", "static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

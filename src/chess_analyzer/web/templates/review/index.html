@@ -1,0 +1,77 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChessAnalyzer · Game review</title>
+  <link rel="stylesheet" href="{% static 'review/vendor/assets/chessground.base.css' %}">
+  <link rel="stylesheet" href="{% static 'review/vendor/assets/chessground.brown.css' %}">
+  <link rel="stylesheet" href="{% static 'review/vendor/assets/chessground.cburnett.css' %}">
+  <link rel="stylesheet" href="{% static 'review/review.css' %}">
+  <script type="module" src="{% static 'review/review.js' %}"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="{% url 'review' %}"><span aria-hidden="true">♞</span> ChessAnalyzer<span class="brand-tag">REVIEW</span></a>
+    <span class="local-badge"><span></span> Local Stockfish</span>
+  </header>
+  <main>
+    <section class="intro">
+      <div><p class="eyebrow">EVERY MOVE TELLS A STORY</p><h1>Find your next better move.</h1><p>Replay your game. Compare your decisions with Stockfish.</p></div>
+      <button type="button" id="demo" class="secondary">Load example game</button>
+    </section>
+    <section class="workspace" aria-label="Game analysis workspace">
+      <div class="board-column">
+        <div class="player-card"><span class="avatar">♚</span><div><strong id="black-player">Black</strong><span id="game-event">Import a game to get started</span></div><span class="color-dot black"></span></div>
+        <div class="board-shell"><div id="board" class="cg-wrap" role="img" aria-label="Chessboard, starting position"></div></div>
+        <div class="player-card"><span class="avatar light">♔</span><div><strong id="white-player">White</strong><span id="game-result">Standard chess</span></div><span class="color-dot white"></span></div>
+        <div class="board-toolbar">
+          <div class="navigation" role="group" aria-label="Move navigation">
+            <button id="first" title="First move (Home)" aria-label="First move" disabled>⇤</button>
+            <button id="previous" title="Previous move (Left arrow)" aria-label="Previous move" disabled>←</button>
+            <span id="move-counter">No game loaded</span>
+            <button id="next" title="Next move (Right arrow)" aria-label="Next move" disabled>→</button>
+            <button id="last" title="Last move (End)" aria-label="Last move" disabled>⇥</button>
+          </div>
+          <button id="flip" class="secondary" title="Flip board">⇅ Flip</button>
+        </div>
+        <p class="board-caption"><span class="legend green"></span> Engine best <span class="legend blue"></span> Played move <span class="keyboard-hint">Use ← → to explore</span></p>
+      </div>
+      <aside class="review-column">
+        <section class="panel import-panel">
+          <div class="panel-heading"><h2>Your game</h2><span class="small-label">PGN IMPORT</span></div>
+          <form id="analysis-form" action="{% url 'analyze' %}">
+            {% csrf_token %}
+            <label for="pgn">Paste a PGN or choose a PGN file</label>
+            <textarea id="pgn" name="pgn" rows="4" maxlength="100000" required spellcheck="false" placeholder='[White "You"]&#10;[Black "Opponent"]&#10;&#10;1. e4 e5 2. Nf3 Nc6 *'></textarea>
+            <div class="import-actions"><label class="file-label" for="pgn-file">↥ Open PGN<input id="pgn-file" type="file" accept=".pgn,text/plain,application/x-chess-pgn"></label><button id="analyze-button" type="submit" class="primary">Analyze game <span aria-hidden="true">↗</span></button></div>
+          </form>
+          <p id="status" role="status" aria-live="polite">Private by design. PGNs are not saved.</p>
+          <p id="error" role="alert" hidden></p>
+        </section>
+        <section class="panel comparison-panel" aria-labelledby="position-heading">
+          <div class="panel-heading"><h2 id="position-heading">Move insights</h2><span id="quality" class="quality">READY TO EXPLORE</span></div>
+          <p id="position-label" class="muted">Select a move after analyzing a game.</p>
+          <div class="comparison-cards">
+            <div><span class="small-label">YOU PLAYED</span><strong id="played-move">—</strong></div>
+            <div class="best-card"><span class="small-label">ENGINE BEST</span><strong id="best-move">—</strong></div>
+          </div>
+          <div class="metrics"><span>Evaluation <strong id="evaluation">—</strong></span><span>Estimated loss <strong id="cp-loss">—</strong></span></div>
+          <div class="preview-tabs" role="group" aria-label="Board position preview">
+            <button data-preview="before" aria-pressed="true" disabled>Before move</button>
+            <button data-preview="played" aria-pressed="false" disabled>Played line</button>
+            <button data-preview="best" aria-pressed="false" disabled>Best line</button>
+          </div>
+          <p id="preview-note" class="muted">Both arrows show choices from the same position.</p>
+        </section>
+        <section class="panel moves-panel">
+          <div class="panel-heading"><h2>Game moves</h2><span id="analysis-settings" class="small-label">NOT ANALYZED</span></div>
+          <div id="move-list" class="move-list" aria-label="Click a move to review"><div class="empty-state"><span aria-hidden="true">♟</span><p>Your game, move by move.</p><small>Import a PGN to see every decision here.</small></div></div>
+        </section>
+      </aside>
+    </section>
+    <footer><span>Powered by <a href="https://github.com/lichess-org/chessground">Lichess Chessground</a> &amp; Stockfish</span><span>Scores favor White when positive. Search estimates, not accuracy ratings.</span></footer>
+  </main>
+</body>
+</html>

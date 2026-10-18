@@ -1,0 +1,17 @@
+{
+  "name": "chess-analyzer-review",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-frontend.mjs",
+    "test": "node --test tests/frontend/*.test.mjs",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "@lichess-org/chessground": "10.4.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "esbuild": "0.28.2"
+  }
+}

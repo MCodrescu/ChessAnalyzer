@@ -1,7 +1,9 @@
 """Execute the example notebook end to end with offline service doubles."""
 
 import json
+from html import escape
 from pathlib import Path
+from statistics import mean
 from types import SimpleNamespace
 
 import chess
@@ -27,7 +29,7 @@ def test_latest_game_notebook_offline(monkeypatch):
     calls = []
 
     def archives(username):
-        assert username == config.CHESSCOM_USERNAME
+        assert username == sample["black"]["username"]
         return SimpleNamespace(
             json={"archives": ["https://api.chess.com/pub/player/mcodr/games/2023/11"]}
         )
@@ -67,7 +69,61 @@ def test_latest_game_notebook_offline(monkeypatch):
         if cell["cell_type"] == "code":
             source = "".join(cell["source"])
             exec(compile(source, f"notebook-cell-{index + 1}", "exec"), namespace)
+            # Respect notebook-local username overrides without contacting a service.
+            sample["black"]["username"] = namespace["CHESSCOM_USERNAME"]
     assert len(namespace["analysis"].moves) == 2
     assert len(namespace["my_moves"]) == 1
     assert namespace["player_colors"] == ["black"]
     assert len(calls) == 3
+
+
+@pytest.mark.parametrize(
+    ("matches", "expected"),
+    [
+        ([True, False, True], "2/3 (66.7%)"),
+        ([True], "1/1 (100.0%)"),
+        ([False], "0/1 (0.0%)"),
+        ([], "N/A (no moves played)."),
+    ],
+)
+def test_best_move_accuracy_counts_all_player_moves(matches, expected, capsys):
+    root = Path(__file__).resolve().parents[1]
+    notebook = json.loads(
+        (root / "notebooks" / "analyze_latest_game.ipynb").read_text()
+    )
+    display_cell = notebook["cells"][-1]
+
+    def move(player, is_best):
+        return SimpleNamespace(
+            fullmove_number=1,
+            player=player,
+            played_move_san="e4",
+            best_move_san="e4",
+            evaluation_before=PositionEvaluation(mate=3),
+            evaluation_after=PositionEvaluation(mate=2),
+            estimated_cp_loss=None,
+            is_best_move=is_best,
+        )
+
+    namespace = {
+        "analysis": SimpleNamespace(
+            moves=[move("white", best) for best in matches] + [move("black", True)]
+        ),
+        "latest_game": {
+            "white": {"username": "Tester"},
+            "black": {"username": "Opponent"},
+        },
+        "CHESSCOM_USERNAME": "tester",
+        "escape": escape,
+        "mean": mean,
+        "HTML": str,
+        "display": lambda content: None,
+    }
+    source = "".join(display_cell["source"])
+    exec(compile(source, "notebook-summary", "exec"), namespace)
+    assert f"Best-move accuracy: {expected}" in capsys.readouterr().out
+    assert namespace["total_moves"] == len(matches)
+    assert namespace["best_move_count"] == sum(matches)
+    assert namespace["accuracy"] == (
+        pytest.approx(100 * sum(matches) / len(matches)) if matches else None
+    )

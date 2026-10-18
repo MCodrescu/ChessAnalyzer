@@ -190,6 +190,16 @@ class PGNAnalyzer:
         return move
 
     @staticmethod
+    def parse_game(pgn: str) -> tuple[chess.pgn.Game, chess.Board]:
+        """Validate one standard PGN without starting an engine.
+
+        Return the parsed game and starting board. Raise InvalidPGNError for
+        unsupported variants, invalid positions, illegal moves, or extra games.
+        Web callers can enforce move-count limits before allocating an engine.
+        """
+        return PGNAnalyzer._parse_game(pgn)
+
+    @staticmethod
     def _parse_game(pgn: str) -> tuple[chess.pgn.Game, chess.Board]:
         if not isinstance(pgn, str) or not pgn.strip():
             raise InvalidPGNError("Provide a nonempty PGN string containing one game.")

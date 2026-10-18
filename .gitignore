@@ -9,6 +9,11 @@ dist/
 .ipynb_checkpoints/
 .coverage
 htmlcov/
+node_modules/
+test-results/
+playwright-report/
+/staticfiles/
+src/chess_analyzer/web/static/review/vendor/
 .env
 .env.*
 !.env.example
