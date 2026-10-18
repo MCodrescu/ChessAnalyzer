@@ -41,13 +41,35 @@
       <aside class="review-column">
         <section class="panel import-panel">
           <div class="panel-heading"><h2>Your game</h2><span class="small-label">PGN IMPORT</span></div>
+          <form id="chesscom-form" action="{% url 'chesscom-games' %}" method="get">
+            <label for="chesscom-username">Find a game by Chess.com username</label>
+            <div class="username-search">
+              <input id="chesscom-username" name="username" type="text" maxlength="25" pattern="[A-Za-z0-9_\-]+" placeholder="Chess.com username" autocomplete="off" spellcheck="false" required>
+              <button id="chesscom-search" type="submit" class="secondary">Find games</button>
+            </div>
+          </form>
+          <div id="chesscom-picker" hidden>
+            <label for="chesscom-month">Archive month</label>
+            <select id="chesscom-month"></select>
+            <label for="chesscom-game">Completed standard games · newest first</label>
+            <select id="chesscom-game" size="4" disabled></select>
+            <div class="game-pagination">
+              <button type="button" id="games-previous" class="secondary" aria-label="Previous game page" disabled>←</button>
+              <span id="games-page" class="muted"></span>
+              <button type="button" id="games-next" class="secondary" aria-label="Next game page" disabled>→</button>
+              <button type="button" id="chesscom-load" class="secondary" disabled>Load selected game</button>
+            </div>
+          </div>
+          <p id="chesscom-status" class="muted" role="status" aria-live="polite">Public completed games only. No login needed.</p>
+          <p id="chesscom-error" class="lookup-error" role="alert" hidden></p>
+          <div class="import-divider"><span>OR IMPORT PGN</span></div>
           <form id="analysis-form" action="{% url 'analyze' %}">
             {% csrf_token %}
             <label for="pgn">Paste a PGN or choose a PGN file</label>
             <textarea id="pgn" name="pgn" rows="4" maxlength="100000" required spellcheck="false" placeholder='[White "You"]&#10;[Black "Opponent"]&#10;&#10;1. e4 e5 2. Nf3 Nc6 *'></textarea>
             <div class="import-actions"><label class="file-label" for="pgn-file">↥ Open PGN<input id="pgn-file" type="file" accept=".pgn,text/plain,application/x-chess-pgn"></label><button id="analyze-button" type="submit" class="primary">Analyze game <span aria-hidden="true">↗</span></button></div>
           </form>
-          <p id="status" role="status" aria-live="polite">Private by design. PGNs are not saved.</p>
+          <p id="status" role="status" aria-live="polite">Analysis stays local. No games saved to disk.</p>
           <p id="error" role="alert" hidden></p>
         </section>
         <section class="panel comparison-panel" aria-labelledby="position-heading">

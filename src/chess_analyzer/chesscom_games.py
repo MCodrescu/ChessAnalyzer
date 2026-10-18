@@ -22,6 +22,21 @@ def _archive_month(archive: object) -> tuple[int, int]:
     return year, month
 
 
+def get_archive_months(client: Any, username: str) -> list[tuple[int, int]]:
+    """Return distinct archive (year, month) pairs, newest first.
+
+    Use the caller-owned ChessDotComClient. Reject blank usernames and malformed
+    responses with ValueError; propagate client/network errors unchanged. Parse
+    dates locally and never request URLs supplied by an API response.
+    """
+    if not isinstance(username, str) or not username.strip():
+        raise ValueError("username must be a nonempty string.")
+    payload = client.get_player_game_archives(username.strip()).json
+    if not isinstance(payload, dict) or not isinstance(payload.get("archives"), list):
+        raise ValueError("Chess.com archive response must contain an archives list.")
+    return sorted({_archive_month(url) for url in payload["archives"]}, reverse=True)
+
+
 def get_latest_game(
     client: Any, username: str, *, rules: str | None = None
 ) -> dict[str, Any]:
@@ -52,10 +67,7 @@ def get_latest_game(
     if rules is not None and rules != "chess":
         raise ValueError("Only the standard chess rules filter is supported.")
     username = username.strip()
-    payload = client.get_player_game_archives(username).json
-    if not isinstance(payload, dict) or not isinstance(payload.get("archives"), list):
-        raise ValueError("Chess.com archive response must contain an archives list.")
-    months = sorted({_archive_month(url) for url in payload["archives"]}, reverse=True)
+    months = get_archive_months(client, username)
     if not months:
         raise ValueError("No completed games found: archive list is empty.")
 

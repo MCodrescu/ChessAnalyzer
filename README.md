@@ -3,7 +3,8 @@
 Analyze standard-chess PGNs with a **local Stockfish engine**, not a remote
 evaluation API. Python communicates with an OS-installed executable over UCI via
 python-chess. No Stockfish API key, HTTP rate limits, or committed engine binaries.
-Chess.com's public API is still used only to download games in the notebook.
+Chess.com's public API is used only to download games in the notebook and web
+game picker; all engine analysis stays local.
 
 ## Install and check the live engine
 
@@ -38,8 +39,9 @@ never falls back silently. No engine is downloaded or started during imports.
 ### Django game review
 
 The web application uses Lichess's **Chessground** board and the same local
-analyzer as the CLI/notebook. Paste a PGN, open a PGN file, or load the example;
-select **Analyze game**, then click any move. Left/right arrows navigate moves;
+analyzer as the CLI/notebook. Choose a Chess.com game, paste a PGN, open a PGN
+file, or load the example; select **Analyze game**, then click any move.
+Left/right arrows navigate moves;
 Home/End jump to the first/last move. The board can be flipped.
 
 ```bash
@@ -54,8 +56,35 @@ above. Node/npm are build-time tools only. All board JavaScript, styles, and
 piece images are served locally; no CDN or Lichess API is used. Rebuild after
 changing frontend dependencies. Build before packaging a wheel so its static
 assets are included. No database or migrations are needed, and PGNs/results are
-not persisted; refreshing clears the review. Export a Chess.com/Lichess game as
-PGN to review it here; automatic account/game fetching remains in the notebook.
+not persisted; refreshing clears the review. Lichess games can also be exported
+as PGNs and imported here.
+
+#### Choose a Chess.com game
+
+1. Enter a **Chess.com username** and select **Find games** (no login/API key).
+2. The newest available archive month opens automatically. Choose another
+  **Archive month** to browse older games.
+3. Select a game, then **Load selected game**. Lists show both players/ratings,
+  local completion date/time, time control, and result. Games are newest first,
+  with 25 per page; use the page arrows for more.
+4. Select **Analyze game** to run the existing Stockfish review. Loading a game
+  never starts engine analysis automatically or overwrites an existing review
+  until the new analysis completes.
+
+Only completed standard-chess games with nonempty PGNs within the import-size
+limit are offered; live/in-progress games and variants are excluded. An empty
+month leaves the month picker available so you can choose an older archive.
+Fetching needs internet and may lag behind Chess.com's cached public data;
+Chess.com errors/rate limits are displayed without affecting PGN import.
+
+Lookup makes one public API request at a time per web process, using the existing
+Chess.com Python client (30-second HTTP timeout; no automatic retries). Public
+archive/month data is cached **in process memory for 60 seconds**, not saved to
+disk; analysis results are not cached. This is not a cross-process rate limiter.
+The username is validated and upstream URLs are constructed by the client, never
+taken from user input or followed from archive responses. Lookups begin only
+when **Find games** is selected; typing alone sends no request. The browser does
+not contact Chess.com directly and never requests a password.
 
 - **Before move** shows both choices from the same position: green for the
   engine best move, blue for the played move (one green arrow when they match).

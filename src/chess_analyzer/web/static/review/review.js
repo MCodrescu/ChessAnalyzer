@@ -1,4 +1,5 @@
 import { formatEvaluation, positionFor } from './review-state.js';
+import './chesscom-import.js';
 
 const $ = (id) => document.getElementById(id);
 const status = $('status');
