@@ -95,6 +95,61 @@ test('browses game pages and months without leaving stale games on failure', asy
   expect(calls.at(-1)).toEqual({ username: 'player', year: '2026', month: '09', page: '1' });
 });
 
+test('defaults to the searched player perspective only after successful analysis', async ({ page }) => {
+  const blackGame = {
+    ...games[0], white: games[0].black, black: { ...games[0].white, username: 'pLaYeR' },
+  };
+  await page.route(endpoint, (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: params.has('month')
+      ? { username: 'player', page: 1, pages: 1, total: 2, games: [blackGame, games[1]] }
+      : archives });
+  });
+  let fail = false;
+  await page.route('**/api/analyze/', (route) => route.fulfill(fail
+    ? { status: 503, json: { error: 'Engine unavailable.' } }
+    : { json: {
+      headers: { White: 'White player', Black: 'Black player' }, moves: [],
+      initial_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      analysis_depth: 12, analysis_time_seconds: 0.2,
+    } }));
+  const board = page.locator('#board');
+  await openLoader(page);
+  await page.locator('#chesscom-username').fill('PLAYER');
+  await page.getByRole('button', { name: 'Find games', exact: true }).click();
+  await expect(page.locator('#chesscom-game option')).toHaveCount(2);
+  await expect(board).toHaveClass(/orientation-white/);
+  await page.getByRole('button', { name: 'Analyze game', exact: true }).click();
+  await expect(page.locator('#import-dialog')).not.toBeVisible();
+  await expect(board).toHaveClass(/orientation-black/);
+  await expect(page.locator('.board-shell + .player-card #black-player')).toBeVisible();
+  await page.locator('#flip').click();
+  await expect(board).toHaveClass(/orientation-white/);
+  await expect(page.locator('.board-shell + .player-card #white-player')).toBeVisible();
+  await page.getByRole('button', { name: 'Load game', exact: true }).click();
+  await page.getByRole('button', { name: 'Analyze game', exact: true }).click();
+  await expect(page.locator('#import-dialog')).not.toBeVisible();
+  await expect(board).toHaveClass(/orientation-black/);
+  await page.getByRole('button', { name: 'Load game', exact: true }).click();
+  await page.locator('#chesscom-game').selectOption('1');
+  await expect(board).toHaveClass(/orientation-black/);
+  fail = true;
+  await page.getByRole('button', { name: 'Analyze game', exact: true }).click();
+  await expect(page.locator('#import-error')).toHaveText('Engine unavailable.');
+  await expect(board).toHaveClass(/orientation-black/);
+  fail = false;
+  await page.getByRole('button', { name: 'Analyze game', exact: true }).click();
+  await expect(page.locator('#import-dialog')).not.toBeVisible();
+  await expect(board).toHaveClass(/orientation-white/);
+  await expect(page.locator('.board-shell + .player-card #white-player')).toBeVisible();
+  await page.locator('#flip').click();
+  await page.getByRole('button', { name: 'Load game', exact: true }).click();
+  await page.getByRole('button', { name: 'Use example game', exact: true }).click();
+  await page.getByRole('button', { name: 'Analyze game', exact: true }).click();
+  await expect(page.locator('#import-dialog')).not.toBeVisible();
+  await expect(board).toHaveClass(/orientation-white/);
+});
+
 test('handles unknown users, empty archives, and months with no supported games', async ({ page }) => {
   await page.route(endpoint, (route) => {
     const params = new URL(route.request().url()).searchParams;

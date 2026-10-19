@@ -1,7 +1,7 @@
 import { formatEvaluation, positionFor } from './review-state.js';
 import { ReviewSummary } from './review-summary.js';
 import { importDialog, setReviewStatus } from './import-dialog.js';
-import { selectedGamePGN, setAnalysisBusy, setBoardReady } from './chesscom-import.js';
+import { selectedGamePGN, selectedGameOrientation, setAnalysisBusy, setBoardReady } from './chesscom-import.js';
 
 const $ = (id) => document.getElementById(id);
 let ground;
@@ -208,6 +208,7 @@ $('analysis-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const pgn = selectedGamePGN();
   if (!ground || !pgn) return;
+  const orientation = selectedGameOrientation();
   showError('');
   setAnalysisBusy(true);
   $('analyze-button').textContent = 'Analyzing…';
@@ -232,6 +233,7 @@ $('analysis-form').addEventListener('submit', async (event) => {
     $('analysis-settings').textContent = `DEPTH ≤ ${data.analysis_depth} · ${data.analysis_time_seconds === null ? 'DEPTH ONLY' : `${data.analysis_time_seconds}s/POS`}`;
     renderMoveList();
     summary.render(data);
+    setOrientation(orientation);
     selectMove(0);
     setReviewStatus('Analysis complete. Click any move to compare the choices.');
     importDialog.close();
@@ -245,9 +247,8 @@ $('analysis-form').addEventListener('submit', async (event) => {
   }
 });
 
-$('flip').addEventListener('click', () => {
-  if (!ground) return;
-  ground.toggleOrientation();
+function setOrientation(orientation) {
+  ground.set({ orientation });
   const whiteCard = $('white-player').closest('.player-card');
   const blackCard = $('black-player').closest('.player-card');
   const board = $('board').closest('.board-shell');
@@ -255,6 +256,11 @@ $('flip').addEventListener('click', () => {
   // Move whole cards so names, color indicators, and metadata stay together.
   board.before(whiteAtBottom ? blackCard : whiteCard);
   board.after(whiteAtBottom ? whiteCard : blackCard);
+}
+
+$('flip').addEventListener('click', () => {
+  if (!ground) return;
+  setOrientation(ground.state.orientation === 'white' ? 'black' : 'white');
 });
 $('first').addEventListener('click', () => selectMove(0));
 $('previous').addEventListener('click', () => selectMove(selected - 1));

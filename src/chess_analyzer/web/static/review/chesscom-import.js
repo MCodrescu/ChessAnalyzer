@@ -10,6 +10,7 @@ let pages = 1;
 let requestId = 0;
 let controller;
 let selectedPgn = '';
+let selectedOrientation = 'white';
 let lookupBusy = false;
 let analysisBusy = false;
 let boardReady = false;
@@ -17,6 +18,11 @@ let boardReady = false;
 /** Read the current selection only when it is safe to start a new analysis. */
 export function selectedGamePGN() {
   return boardReady && !lookupBusy && !analysisBusy ? selectedPgn : '';
+}
+
+/** Board perspective belonging to the selected archive game's searched player. */
+export function selectedGameOrientation() {
+  return selectedOrientation;
 }
 
 /** Keep selection controls locked for the entire in-flight analysis. */
@@ -31,8 +37,9 @@ export function setBoardReady(ready) {
   updateControls();
 }
 
-function selectGame(pgn = '', label = 'Choose a game above to enable analysis.') {
+function selectGame(pgn = '', label = 'Choose a game above to enable analysis.', orientation = 'white') {
   selectedPgn = pgn;
+  selectedOrientation = orientation;
   $('selected-game').textContent = label;
   if (boardReady) {
     $('error').hidden = true;
@@ -44,7 +51,8 @@ function selectGame(pgn = '', label = 'Choose a game above to enable analysis.')
 function selectListedGame() {
   const index = $('chesscom-game').selectedIndex;
   const game = games[index];
-  selectGame(game?.pgn || '', game ? $('chesscom-game').options[index].textContent : undefined);
+  const orientation = game?.black.username.toLowerCase() === username.toLowerCase() ? 'black' : 'white';
+  selectGame(game?.pgn || '', game ? $('chesscom-game').options[index].textContent : undefined, orientation);
 }
 
 function showError(message = '') {

@@ -46,7 +46,11 @@ a built-in sample without needing a Chess.com lookup. The modal closes after suc
 analysis. Escape or the close button dismisses it without losing the current
 review or game selection. Selecting a game never starts analysis by itself.
 Left/right arrows navigate moves;
-Home/End jump to the first/last move. The board can be flipped.
+Home/End jump to the first/last move. Imported games open with the searched
+Chess.com player's color at the bottom (username matching is case-insensitive).
+The player cards follow the board orientation. **Flip** switches sides manually;
+loading another analysis restores that game's player perspective. The example
+game defaults to White at the bottom.
 
 Click a piece and then a highlighted destination, or drag it, to try legal moves
 for either side from the displayed position (even before loading a game).
