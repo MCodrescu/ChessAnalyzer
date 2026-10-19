@@ -9,6 +9,10 @@ let analysis;
 let selected = 0;
 let preview = 'before';
 let moveButtons = [];
+let Chess;
+let legalDestinations;
+let boardPosition;
+let pendingPromotion;
 const summary = new ReviewSummary(selectMove);
 
 function showError(message) {
@@ -21,17 +25,110 @@ function showError(message) {
 // A missing build should produce an actionable message, not a broken page.
 try {
   const { Chessground } = await import('./vendor/chessground.js');
+  ({ Chess, legalDestinations } = await import('./vendor/board-rules.js'));
   ground = Chessground($('board'), {
-    viewOnly: true,
+    viewOnly: false,
     coordinates: true,
     animation: { enabled: true, duration: 180 },
+    autoCastle: false,
     drawable: { enabled: false, visible: true },
+    movable: { free: false, rookCastle: false, events: { after: (from, to) => playBoardMove(from, to) } },
+    premovable: { enabled: false },
   });
+  loadBoardPosition(new Chess().fen());
   setBoardReady(true);
 } catch {
   showError('Board assets are missing. Run npm ci and npm run build, then reload.');
   setBoardReady(false);
 }
+
+function renderBoardPosition(lastMove, shapes = []) {
+  const color = boardPosition.turn() === 'w' ? 'white' : 'black';
+  ground.set({
+    fen: boardPosition.fen(), lastMove, check: boardPosition.isCheck() ? color : false,
+    turnColor: color, selected: undefined,
+    movable: { color, rookCastle: boardPosition.chess960, dests: legalDestinations(boardPosition) },
+  });
+  ground.setAutoShapes(shapes);
+  // Expose the actual full position, rather than Chessground's placement-only FEN.
+  $('board').dataset.fen = boardPosition.fen();
+  const exploring = boardPosition.history().length > 0;
+  $('undo-variation').disabled = $('reset-variation').disabled = !exploring;
+}
+
+function loadBoardPosition(fen, lastMove, shapes) {
+  pendingPromotion = undefined;
+  if ($('promotion-dialog').open) $('promotion-dialog').close();
+  boardPosition = new Chess(fen, { chess960: analysis?.chess960 === true });
+  renderBoardPosition(lastMove, shapes);
+}
+
+function renderVariation(lastMove) {
+  renderBoardPosition(lastMove);
+  const color = boardPosition.turn() === 'w' ? 'White' : 'Black';
+  const state = boardPosition.isCheckmate() ? `${color} is checkmated.`
+    : boardPosition.isStalemate() ? 'Stalemate.'
+      : `${color} to move${boardPosition.isCheck() ? ' · Check' : ''}.`;
+  const line = boardPosition.history().join(' ');
+  $('board').setAttribute('aria-label', `Interactive chessboard, ${state}`);
+  $('quality').textContent = 'EXPLORING';
+  $('position-label').textContent = `Your variation: ${line}`;
+  $('evaluation').textContent = 'Not searched';
+  $('cp-loss').textContent = '—';
+  $('played-move').textContent = $('best-move').textContent = '—';
+  for (const button of document.querySelectorAll('[data-preview]')) button.setAttribute('aria-pressed', 'false');
+  $('preview-note').textContent = `${state} Click or drag pieces to try legal moves. Undo or Reset to return. Original game scores and graph are unchanged; this variation is not analyzed.`;
+}
+
+function playBoardMove(from, to, promotion) {
+  const choices = boardPosition.moves({ verbose: true }).filter((move) => move.from === from && move.to === to);
+  if (!choices.length) {
+    renderBoardPosition();
+    return;
+  }
+  if (choices.some((move) => move.promotion) && !promotion) {
+    // Chessground has already moved the pawn visually. Restore it while choosing.
+    renderBoardPosition();
+    pendingPromotion = { from, to };
+    $('promotion-dialog').showModal();
+    return;
+  }
+  boardPosition.move({ from, to, ...(promotion ? { promotion } : {}) });
+  renderVariation([from, to]);
+}
+
+function resetVariation() {
+  if (analysis) selectMove(selected, preview);
+  else {
+    loadBoardPosition(new Chess().fen());
+    $('board').setAttribute('aria-label', 'Interactive chessboard, starting position');
+    $('quality').textContent = 'READY TO EXPLORE';
+    $('position-label').textContent = 'Select a move after analyzing a game.';
+    $('preview-note').textContent = 'Click or drag pieces to try legal moves, or load a game to review.';
+  }
+}
+
+$('undo-variation').addEventListener('click', () => {
+  boardPosition.undo();
+  const history = boardPosition.history({ verbose: true });
+  if (!history.length) resetVariation();
+  else renderVariation([history.at(-1).from, history.at(-1).to]);
+});
+$('reset-variation').addEventListener('click', resetVariation);
+for (const button of document.querySelectorAll('[data-promotion]')) {
+  button.addEventListener('click', () => {
+    const move = pendingPromotion;
+    pendingPromotion = undefined;
+    $('promotion-dialog').close();
+    if (move) playBoardMove(move.from, move.to, button.dataset.promotion);
+  });
+}
+function cancelPromotion() {
+  pendingPromotion = undefined;
+  $('promotion-dialog').close();
+}
+$('cancel-promotion').addEventListener('click', cancelPromotion);
+$('promotion-dialog').addEventListener('cancel', cancelPromotion);
 
 function renderMoveList() {
   const list = $('move-list');
@@ -71,8 +168,7 @@ function selectMove(index, nextPreview = 'before') {
   $('first').disabled = $('previous').disabled = !move || selected === 0;
   $('last').disabled = $('next').disabled = !move || selected === analysis.moves.length - 1;
   if (!move) {
-    ground.set({ fen: analysis.initial_fen, lastMove: undefined, check: false });
-    ground.setAutoShapes([]);
+    loadBoardPosition(analysis.initial_fen);
     $('board').setAttribute('aria-label', 'Chessboard, game starting position');
     $('move-counter').textContent = 'No moves';
     $('position-label').textContent = 'Game starting position';
@@ -82,8 +178,7 @@ function selectMove(index, nextPreview = 'before') {
     return;
   }
   const position = positionFor(move, preview);
-  ground.set({ fen: position.fen, lastMove: position.lastMove, check: false, turnColor: position.fen.split(' ')[1] === 'w' ? 'white' : 'black' });
-  ground.setAutoShapes(position.shapes);
+  loadBoardPosition(position.fen, position.lastMove, position.shapes);
   $('board').setAttribute('aria-label', `Chessboard, ${preview} position for ${move.fullmove_number}${move.player === 'white' ? '.' : '…'} ${move.played_move_san}`);
   $('move-counter').textContent = `${selected + 1} / ${analysis.moves.length}`;
   $('position-label').textContent = `${move.fullmove_number}${move.player === 'white' ? '.' : '…'} ${move.played_move_san} · ${move.player} to play before this move`;
@@ -169,7 +264,7 @@ for (const button of document.querySelectorAll('[data-preview]')) {
   button.addEventListener('click', () => selectMove(selected, button.dataset.preview));
 }
 document.addEventListener('keydown', (event) => {
-  if (importDialog.open) return;
+  if (importDialog.open || $('promotion-dialog').open) return;
   if (!analysis?.moves.length || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
   const targets = { ArrowLeft: selected - 1, ArrowRight: selected + 1, Home: 0, End: analysis.moves.length - 1 };

@@ -22,7 +22,7 @@ class PositionEvaluator(Protocol):
 
     settings: Settings
 
-    def evaluate(self, fen: str) -> PositionEvaluation:
+    def evaluate(self, fen: str, *, chess960: bool = False) -> PositionEvaluation:
         """Return a White-relative score and best move for the given FEN."""
         ...
 
@@ -31,7 +31,9 @@ class PositionEvaluator(Protocol):
 class BatchPositionEvaluator(Protocol):
     """Optional ordered-batch capability for position evaluators."""
 
-    def evaluate_many(self, fens: list[str]) -> list[PositionEvaluation]:
+    def evaluate_many(
+        self, fens: list[str], *, chess960: bool = False
+    ) -> list[PositionEvaluation]:
         """Return one evaluation per FEN, in the same order as the input."""
         ...
 
@@ -74,8 +76,8 @@ class PGNAnalyzer:
     def analyze(self, pgn: str) -> GameAnalysis:
         """Validate one game, then return its ordered move-quality estimates.
 
-        Supports standard chess including SetUp/FEN starts. Comments and side
-        variations do not contribute moves. Valid games without moves return an
+        Supports standard chess and Chess960, including SetUp/FEN starts.
+        Comments and side variations do not contribute moves. Empty games return an
         empty result. Validation/replay completes before any engine searches.
 
         Raises:
@@ -144,6 +146,7 @@ class PGNAnalyzer:
             moves=tuple(results),
             analysis_depth=self._client.settings.analysis_depth,
             analysis_time_seconds=self._client.settings.analysis_time_seconds,
+            chess960=board.chess960,
         )
 
     def _evaluate_batch(
@@ -163,7 +166,15 @@ class PGNAnalyzer:
                 fens.append(replay.fen())
             if index < len(moves):
                 replay.push(moves[index])
-        evaluated = self._client.evaluate_many(fens) if fens else []
+        evaluated = (
+            (
+                self._client.evaluate_many(fens, chess960=True)
+                if board.chess960
+                else self._client.evaluate_many(fens)
+            )
+            if fens
+            else []
+        )
         if len(evaluated) != len(fens):
             raise StockfishEngineError(
                 "Evaluator returned an incomplete position batch."
@@ -175,7 +186,11 @@ class PGNAnalyzer:
     def _evaluate(self, board: chess.Board) -> PositionEvaluation:
         # Preserve history-dependent automatic draws before reducing to a FEN.
         terminal = terminal_evaluation(board)
-        return terminal if terminal is not None else self._client.evaluate(board.fen())
+        if terminal is not None:
+            return terminal
+        if board.chess960:
+            return self._client.evaluate(board.fen(), chess960=True)
+        return self._client.evaluate(board.fen())
 
     @staticmethod
     def _best_move(evaluation: PositionEvaluation, board: chess.Board) -> chess.Move:
@@ -191,7 +206,7 @@ class PGNAnalyzer:
 
     @staticmethod
     def parse_game(pgn: str) -> tuple[chess.pgn.Game, chess.Board]:
-        """Validate one standard PGN without starting an engine.
+        """Validate one standard or Chess960 PGN without starting an engine.
 
         Return the parsed game and starting board. Raise InvalidPGNError for
         unsupported variants, invalid positions, illegal moves, or extra games.
@@ -217,8 +232,8 @@ class PGNAnalyzer:
             raise InvalidPGNError(
                 "PGN contains an invalid starting position."
             ) from None
-        if type(board) is not chess.Board or board.chess960:
-            raise InvalidPGNError("Only standard chess is supported.")
+        if type(board) is not chess.Board:
+            raise InvalidPGNError("Only standard chess and Chess960 are supported.")
         if not board.is_valid():
             raise InvalidPGNError("PGN contains an invalid starting position.")
         replay = board.copy()

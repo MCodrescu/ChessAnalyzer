@@ -58,7 +58,7 @@ def terminal_evaluation(board: chess.Board) -> PositionEvaluation | None:
 
 
 class StockfishClient:
-    """Evaluate standard-chess positions with one owned, reusable UCI process.
+    """Evaluate standard or Chess960 positions with one reusable UCI process.
 
     Args:
         settings: Validated engine path, search limits, and resource limits.
@@ -140,35 +140,40 @@ class StockfishClient:
         return EngineStatistics(self._positions, self._search_seconds)
 
     @staticmethod
-    def _board(fen: str) -> chess.Board:
-        board = chess.Board(fen)
+    def _board(fen: str, *, chess960: bool = False) -> chess.Board:
+        board = chess.Board(fen, chess960=chess960)
         if not board.is_valid():
-            raise ValueError("FEN must describe a valid standard-chess position.")
+            raise ValueError("FEN must describe a valid position for the chosen rules.")
         return board
 
-    def evaluate_many(self, fens: list[str]) -> list[PositionEvaluation]:
+    def evaluate_many(
+        self, fens: list[str], *, chess960: bool = False
+    ) -> list[PositionEvaluation]:
         """Validate all FENs first, then search in input order on the same engine.
 
         Empty/terminal-only batches need no engine. Failure raises immediately;
         no partial batch is returned and subsequent positions are not searched.
+        Set chess960=True for every position in a Chess960 batch.
         """
         self._check_open()
-        boards = [self._board(fen) for fen in fens]
+        boards = [self._board(fen, chess960=chess960) for fen in fens]
         return [self._evaluate_board(board) for board in boards]
 
-    def evaluate(self, fen: str) -> PositionEvaluation:
+    def evaluate(self, fen: str, *, chess960: bool = False) -> PositionEvaluation:
         """Return White-relative centipawns/mate and a legal best move for a FEN.
 
         Terminal boards are scored locally. FENs cannot convey repetition history.
         Search stops at the first of the configured depth/time limits. The time
         limit is an engine search budget, not an exact total wall-time guarantee.
+        Set chess960=True for Chess960; FEN alone does not identify the variant.
+        python-chess automatically manages the engine's UCI_Chess960 option.
 
         Raises:
             ValueError: The FEN is invalid.
             StockfishEngineError: Startup, protocol, timeout, or result failure.
         """
         self._check_open()
-        return self._evaluate_board(self._board(fen))
+        return self._evaluate_board(self._board(fen, chess960=chess960))
 
     def _evaluate_board(self, board: chess.Board) -> PositionEvaluation:
         terminal = terminal_evaluation(board)

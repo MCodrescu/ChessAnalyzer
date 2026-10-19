@@ -20,7 +20,7 @@
     <section class="workspace" aria-label="Game analysis workspace">
       <div class="board-column">
         <div class="player-card"><span class="avatar">♚</span><div><strong id="black-player">Black</strong><span id="game-event">Choose a game to get started</span></div><span class="color-dot black"></span></div>
-        <div class="board-shell"><div id="board" class="cg-wrap" role="img" aria-label="Chessboard, starting position"></div></div>
+        <div class="board-shell"><div id="board" class="cg-wrap" role="group" aria-label="Interactive chessboard, starting position"></div></div>
         <div class="player-card"><span class="avatar light">♔</span><div><strong id="white-player">White</strong><span id="game-result">Standard chess</span></div><span class="color-dot white"></span></div>
         <div class="board-toolbar">
           <div class="navigation" role="group" aria-label="Move navigation">
@@ -32,7 +32,7 @@
           </div>
           <button id="flip" class="secondary" title="Flip board">⇅ Flip</button>
         </div>
-        <p class="board-caption"><span class="legend green"></span> Engine best <span class="legend blue"></span> Played move <span class="keyboard-hint">Use ← → to explore</span></p>
+        <div class="board-caption"><span class="legend green"></span> Engine best <span class="legend blue"></span> Played move <span class="keyboard-hint"><button id="undo-variation" type="button" title="Undo your last board move" disabled>Undo</button><button id="reset-variation" type="button" title="Return to the reviewed position" disabled>Reset</button></span></div>
       </div>
       <aside class="review-column">
         <div class="review-status">
@@ -75,7 +75,7 @@
             <button data-preview="played" aria-pressed="false" disabled>Played line</button>
             <button data-preview="best" aria-pressed="false" disabled>Best line</button>
           </div>
-          <p id="preview-note" class="muted">Both arrows show choices from the same position.</p>
+          <p id="preview-note" class="muted">Click or drag pieces to try legal moves, or load a game to review.</p>
         </section>
         <section class="panel moves-panel">
           <div class="panel-heading"><h2>Game moves</h2><span id="analysis-settings" class="small-label">NOT ANALYZED</span></div>
@@ -85,6 +85,17 @@
     </section>
     <footer><span>Powered by <a href="https://github.com/lichess-org/chessground">Lichess Chessground</a> &amp; Stockfish</span><span>Positive evaluation favors White. Accuracy is a local estimate.</span></footer>
   </main>
+  <dialog id="promotion-dialog" aria-labelledby="promotion-heading">
+    <h2 id="promotion-heading">Promote pawn</h2>
+    <p>Choose a piece for your pawn.</p>
+    <div class="promotion-options">
+      <button type="button" data-promotion="q">Queen</button>
+      <button type="button" data-promotion="r">Rook</button>
+      <button type="button" data-promotion="b">Bishop</button>
+      <button type="button" data-promotion="n">Knight</button>
+    </div>
+    <button type="button" id="cancel-promotion" class="secondary">Cancel</button>
+  </dialog>
   <dialog id="import-dialog" aria-labelledby="import-heading" aria-describedby="import-description">
     <div class="panel-heading"><h2 id="import-heading">Load a game</h2><button id="close-import" type="button" class="secondary" aria-label="Close game loader">✕</button></div>
     <p id="import-description" class="muted">Choose a public Chess.com game, then select Analyze game. Your current review stays available until the next analysis finishes.</p>

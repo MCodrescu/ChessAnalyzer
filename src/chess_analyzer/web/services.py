@@ -34,7 +34,7 @@ def analyze_pgn(pgn: str) -> dict:
     payload = asdict(result)
     payload["initial_fen"] = initial_board.fen()
     for move in payload["moves"]:
-        board = chess.Board(move["fen_before"])
+        board = chess.Board(move["fen_before"], chess960=initial_board.chess960)
         board.push_uci(move["best_move_uci"])
         move["best_fen"] = board.fen()
     return payload

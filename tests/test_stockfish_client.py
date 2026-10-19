@@ -155,6 +155,32 @@ def test_batch_order_and_black_sign(settings, engine_boundary):
     assert [call.args[0].fen() for call in engine.analyse.call_args_list] == fens
 
 
+def test_chess960_single_batch_and_standard_switch(settings, engine_boundary):
+    engine, _ = engine_boundary
+    fen = "4k3/8/8/8/8/8/8/R1K2R2 w KQ - 0 1"
+    with StockfishClient(settings) as client:
+        client.evaluate(fen, chess960=True)
+        client.evaluate_many([fen, fen], chess960=True)
+        client.evaluate(chess.STARTING_FEN)
+    boards = [call.args[0] for call in engine.analyse.call_args_list]
+    assert [board.chess960 for board in boards] == [True, True, True, False]
+    assert all(board.is_valid() for board in boards)
+    assert chess.Move.from_uci("c1f1") in boards[0].legal_moves
+
+
+def test_chess960_castling_best_move_uses_rook_square(settings, engine_boundary):
+    engine, _ = engine_boundary
+    board = chess.Board("4k3/8/8/8/8/8/8/R1K2R2 w KQ - 0 1", chess960=True)
+    engine.analyse.side_effect = None
+    engine.analyse.return_value = {
+        "score": chess.engine.PovScore(chess.engine.Cp(25), board.turn),
+        "pv": [board.parse_san("O-O-O")],
+    }
+    with StockfishClient(settings) as client:
+        result = client.evaluate(board.fen(), chess960=True)
+    assert result.best_move_uci == "c1a1"
+
+
 @pytest.mark.parametrize(
     "error",
     [

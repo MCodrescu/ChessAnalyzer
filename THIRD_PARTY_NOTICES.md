@@ -16,3 +16,7 @@ those obligations. See the upstream README and bundled license for full terms.
 Stockfish is installed separately; its redistribution obligations also apply if
 you distribute an image containing the engine. No Lichess server code, branding,
 or remote analysis services are used by this interface.
+
+Legal interactive moves use [Chessops](https://github.com/niklasf/chessops) 0.15.1,
+copyright its contributors, under **GPL-3.0-or-later**. The frontend build
+bundles it locally and copies its full license into the static vendor assets.

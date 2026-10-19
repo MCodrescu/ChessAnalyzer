@@ -34,6 +34,8 @@ main { max-width: 1320px; width: 100%; margin: 0 auto; padding: 10px 20px; flex:
 .navigation button { font-size: 22px; padding: 5px 12px; }
 #move-counter { color: var(--muted); font-size: 11px; text-align: center; min-width: 85px; }
 .board-caption { font-size: 10px; color: var(--muted); display: flex; align-items: center; gap: 7px; margin: 6px 0 0; }
+.board-caption button { padding: 1px 5px; font-size: 10px; }
+.board-caption .keyboard-hint { display: flex; gap: 4px; }
 .legend { width: 7px; height: 7px; border-radius: 50%; margin-left: 12px; }.legend:first-child { margin-left: 0; }.green { background: #86b85c; }.blue { background: #6696c8; }.keyboard-hint { margin-left: auto; }
 .review-column { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; padding: 0 3px 3px; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 11px; padding: 12px; flex-shrink: 0; }
@@ -81,6 +83,10 @@ form > label { font-size: 11px; color: var(--muted); display: block; margin-bott
 #graph-note { font-size: 9px; margin: 4px 0 0; }
 #import-dialog { color: var(--text); background: var(--panel); border: 1px solid #47525e; border-radius: 12px; width: min(620px, calc(100vw - 24px)); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); padding: 20px; box-shadow: 0 24px 100px #0009; overflow-y: auto; overscroll-behavior: contain; }
 #import-dialog::backdrop { background: #05080dbc; backdrop-filter: blur(3px); }
+#promotion-dialog { color: var(--text); background: var(--panel); border: 1px solid #47525e; border-radius: 12px; width: min(380px, calc(100vw - 24px)); padding: 20px; }
+#promotion-dialog::backdrop { background: #05080dbc; }
+.promotion-options { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+.promotion-options button { background: #343e46; }
 #import-dialog .panel-heading { margin-bottom: 8px; }#import-heading { font-size: 19px; }#close-import { padding: 5px 10px; }
 #import-description { margin: 0 0 18px; }#import-status { margin-bottom: 0; }
 footer { display: flex; justify-content: space-between; gap: 8px; font-size: 9px; color: #818d9a; border-top: 1px solid var(--border); padding-top: 6px; flex-shrink: 0; flex-wrap: wrap; }footer a { color: #adbca4; }

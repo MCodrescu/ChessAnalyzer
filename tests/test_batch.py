@@ -50,3 +50,33 @@ def test_incomplete_batch_is_rejected_before_scoring(settings):
 
     with pytest.raises(StockfishEngineError, match="incomplete"):
         PGNAnalyzer(Incomplete()).analyze("1. e4 *")
+
+
+def test_chess960_batch_matches_serial_and_preserves_every_variant(settings):
+    class Serial:
+        def __init__(self):
+            self.settings = settings
+            self.calls = []
+
+        def evaluate(self, fen, *, chess960=False):
+            assert chess960
+            self.calls.append(fen)
+            board = chess.Board(fen, chess960=chess960)
+            castles = list(board.generate_castling_moves())
+            best = castles[0] if castles else next(iter(board.legal_moves))
+            return PositionEvaluation(cp=10, best_move_uci=best.uci())
+
+    class Batch(Serial):
+        def evaluate_many(self, fens, *, chess960=False):
+            assert chess960
+            return [self.evaluate(fen, chess960=chess960) for fen in fens]
+
+    pgn = (
+        '[Variant "Chess960"]\n[SetUp "1"]\n'
+        '[FEN "r1k2r2/8/8/8/8/8/8/R1K2R2 w KQkq - 0 1"]\n\n'
+        "1. O-O-O O-O-O 2. Kb1 *"
+    )
+    serial, batch = Serial(), Batch()
+    assert PGNAnalyzer(batch).analyze(pgn) == PGNAnalyzer(serial).analyze(pgn)
+    assert len(batch.calls) == 4
+    assert batch.calls == serial.calls

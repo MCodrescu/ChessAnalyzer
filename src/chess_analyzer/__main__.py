@@ -29,7 +29,9 @@ def main(argv: list[str] | None = None) -> int:
         errors are reported by argparse with exit status two.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("pgn", nargs="?", type=Path, help="One standard-chess PGN file")
+    parser.add_argument(
+        "pgn", nargs="?", type=Path, help="One standard-chess or Chess960 PGN file"
+    )
     parser.add_argument(
         "--check-engine", action="store_true", help="Search the start FEN"
     )

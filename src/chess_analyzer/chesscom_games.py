@@ -46,7 +46,7 @@ def get_latest_game(
         client: An initialized PyPI chess.com ChessDotComClient. Its timeout,
             User-Agent, and lifecycle remain the caller's responsibility.
         username: A nonblank username; surrounding whitespace is stripped.
-        rules: Optional rules filter, such as 'chess' for standard chess. With
+        rules: Optional 'chess' or 'chess960' rules filter. With
             None, inspect the absolute latest game and reject unsupported rules.
 
     Returns:
@@ -56,7 +56,7 @@ def get_latest_game(
 
     Raises:
         ValueError: Username or API payloads are malformed, no completed games
-            exist, or the latest game is not standard chess (rules='chess').
+            exist, or the latest game is neither standard chess nor Chess960.
         Exception: Client/network/API exceptions propagate unchanged.
 
     Archive URL year/month tails are parsed locally; URLs are never requested
@@ -64,8 +64,10 @@ def get_latest_game(
     """
     if not isinstance(username, str) or not username.strip():
         raise ValueError("username must be a nonempty string.")
-    if rules is not None and rules != "chess":
-        raise ValueError("Only the standard chess rules filter is supported.")
+    if rules is not None and rules not in ("chess", "chess960"):
+        raise ValueError(
+            "Only standard chess and Chess960 rules filters are supported."
+        )
     username = username.strip()
     months = get_archive_months(client, username)
     if not months:
@@ -101,8 +103,8 @@ def get_latest_game(
         if not candidates:
             continue
         latest = max(candidates, key=lambda game: game["end_time"])
-        if latest.get("rules") != "chess":
-            raise ValueError("The latest game is not standard chess (rules='chess').")
+        if latest.get("rules") not in ("chess", "chess960"):
+            raise ValueError("The latest game is not standard chess or Chess960.")
         pgn = latest.get("pgn")
         if not isinstance(pgn, str) or not pgn.strip():
             raise ValueError("The latest game has no nonempty PGN.")

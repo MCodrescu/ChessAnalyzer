@@ -95,7 +95,7 @@ test('browses game pages and months without leaving stale games on failure', asy
   expect(calls.at(-1)).toEqual({ username: 'player', year: '2026', month: '09', page: '1' });
 });
 
-test('handles unknown users, empty archives, and months with no standard games', async ({ page }) => {
+test('handles unknown users, empty archives, and months with no supported games', async ({ page }) => {
   await page.route(endpoint, (route) => {
     const params = new URL(route.request().url()).searchParams;
     if (params.get('username') === 'unknown') {
@@ -118,9 +118,30 @@ test('handles unknown users, empty archives, and months with no standard games',
   await expect(page.locator('#chesscom-picker')).toBeHidden();
   await page.locator('#chesscom-username').fill('Player');
   await page.getByRole('button', { name: 'Find games', exact: true }).click();
-  await expect(page.locator('#chesscom-status')).toContainText('No completed standard games');
+  await expect(page.locator('#chesscom-status')).toContainText('No completed standard or Chess960 games');
   await expect(page.locator('#chesscom-month')).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
+});
+
+test('labels and analyzes a selected Chess960 game with the local engine', async ({ page }) => {
+  test.skip(process.env.CHESS_ANALYZER_RUN_ENGINE_TESTS !== '1', 'Requires installed Stockfish.');
+  const fen = '4k3/8/8/8/8/8/8/R1K2R2 w KQ - 0 1';
+  const pgn = `[Variant "Chess960"]\n[SetUp "1"]\n[FEN "${fen}"]\n\n1. O-O *`;
+  await page.route(endpoint, (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: params.has('month')
+      ? { username: 'player', page: 1, pages: 1, total: 1, games: [{ ...games[0], rules: 'chess960', pgn }] }
+      : archives });
+  });
+  await openLoader(page);
+  await page.locator('#chesscom-username').fill('Player');
+  await page.getByRole('button', { name: 'Find games', exact: true }).click();
+  await expect(page.locator('#selected-game')).toContainText('Chess960');
+  await page.getByRole('button', { name: 'Analyze game', exact: true }).click();
+  await expect(page.locator('#status')).toContainText('Analysis complete', { timeout: 30_000 });
+  await expect(page.locator('#board')).toHaveAttribute('data-fen', fen);
+  await page.getByRole('button', { name: 'Played line', exact: true }).click();
+  await expect(page.locator('#board')).toHaveAttribute('data-fen', '4k3/8/8/8/8/8/8/R4RK1 b - - 1 1');
 });
 
 test('editing the username cancels pending results and invalidates old selections', async ({ page }) => {

@@ -17,13 +17,15 @@ from chess_analyzer.models import (
 class FakeEvaluator:
     """Return prepared scores by FEN, rejecting unplanned or terminal requests."""
 
-    def __init__(self, settings, evaluations):
+    def __init__(self, settings, evaluations, *, chess960=False):
         self.settings = settings
         self.evaluations = evaluations
         self.calls = []
+        self.chess960 = chess960
 
-    def evaluate(self, fen):
-        assert not chess.Board(fen).is_game_over(claim_draw=False)
+    def evaluate(self, fen, *, chess960=False):
+        assert chess960 == self.chess960
+        assert not chess.Board(fen, chess960=chess960).is_game_over(claim_draw=False)
         assert fen in self.evaluations, f"Unexpected position: {fen}"
         self.calls.append(fen)
         return self.evaluations[fen]
@@ -31,9 +33,11 @@ class FakeEvaluator:
 
 @pytest.fixture
 def make_evaluator(settings):
-    def make(sans=(), *, scores=None, best_moves=None, fen=chess.STARTING_FEN):
+    def make(
+        sans=(), *, scores=None, best_moves=None, fen=chess.STARTING_FEN, chess960=False
+    ):
         """Build an independent legal replay; optionally override scores/moves."""
-        board = chess.Board(fen)
+        board = chess.Board(fen, chess960=chess960)
         boards = [board.copy()]
         for san in sans:
             board.push_san(san)
@@ -52,7 +56,7 @@ def make_evaluator(settings):
                 else PositionEvaluation(cp=score)
             )
             evaluations[position.fen()] = replace(evaluation, best_move_uci=best)
-        return FakeEvaluator(settings, evaluations)
+        return FakeEvaluator(settings, evaluations, chess960=chess960)
 
     return make
 
@@ -153,6 +157,69 @@ def test_comments_nags_and_legal_variations_do_not_add_evaluations(make_evaluato
     assert len(client.calls) == 4
 
 
+def test_all_chess960_starts_are_accepted():
+    for index in range(960):
+        board = chess.Board.from_chess960_pos(index)
+        _, initial = PGNAnalyzer.parse_game(
+            setup_pgn(board.fen(), "", extra_headers='[Variant "Chess960"]')
+        )
+        assert initial.chess960
+        assert initial.fen() == board.fen()
+
+
+@pytest.mark.parametrize(
+    "fen,san,uci,after",
+    [
+        (
+            "4k3/8/8/8/8/8/8/R1K2R2 w KQ - 0 1",
+            "O-O",
+            "c1f1",
+            "4k3/8/8/8/8/8/8/R4RK1 b - - 1 1",
+        ),
+        (
+            "4k3/8/8/8/8/8/8/R1K2R2 w KQ - 0 1",
+            "O-O-O",
+            "c1a1",
+            "4k3/8/8/8/8/8/8/2KR1R2 b - - 1 1",
+        ),
+        (
+            "4k3/8/8/8/8/8/8/5KR1 w K - 0 1",
+            "O-O",
+            "f1g1",
+            "4k3/8/8/8/8/8/8/5RK1 b - - 1 1",
+        ),
+        (
+            "r1k2r2/8/8/8/8/8/8/4K3 b kq - 0 1",
+            "O-O-O",
+            "c8a8",
+            "2kr1r2/8/8/8/8/8/8/4K3 w - - 1 2",
+        ),
+    ],
+    ids=["stationary-rook", "stationary-king", "king-rook-swap", "black-castling"],
+)
+def test_chess960_castling_replay(make_evaluator, fen, san, uci, after):
+    client = make_evaluator([san], fen=fen, chess960=True, best_moves={0: uci})
+    result = PGNAnalyzer(client).analyze(
+        setup_pgn(fen, san, extra_headers='[Variant "Chess960"]')
+    )
+    assert result.chess960
+    move = result.moves[0]
+    assert move.played_move_uci == move.best_move_uci == uci
+    assert move.played_move_san == move.best_move_san == san
+    assert move.fen_after == after
+    assert move.is_best_move
+
+
+def test_chess960_without_castling_rights_keeps_variant(make_evaluator):
+    fen = "4k3/8/8/8/8/8/8/4K2R w - - 0 1"
+    client = make_evaluator(["Rh2"], fen=fen, chess960=True)
+    result = PGNAnalyzer(client).analyze(
+        setup_pgn(fen, "Rh2", extra_headers='[Variant "Chess960"]')
+    )
+    assert result.chess960
+    assert len(client.calls) == 2
+
+
 @pytest.mark.parametrize("pgn", ['[Event "No moves"]', '[Event "No moves"]\n\n*', "*"])
 def test_valid_game_without_moves_makes_no_requests(make_evaluator, pgn):
     client = make_evaluator()
@@ -177,7 +244,6 @@ def test_valid_game_without_moves_makes_no_requests(make_evaluator, pgn):
         '[Event "First"]\n\n*\n\n[Event "Second"]\n\n*',
         '[Variant "Atomic"]\n\n*',
         '[Variant "Antichess"]\n\n*',
-        '[Variant "Chess960"]\n\n*',
         '[Variant "UnknownVariant"]\n\n*',
         setup_pgn("not a fen", ""),
         setup_pgn("8/8/8/8/8/8/8/8 w - - 0 1", ""),
@@ -197,7 +263,6 @@ def test_valid_game_without_moves_makes_no_requests(make_evaluator, pgn):
         "multiple-header-games",
         "atomic",
         "antichess",
-        "chess960",
         "unknown-variant",
         "malformed-fen",
         "missing-kings",

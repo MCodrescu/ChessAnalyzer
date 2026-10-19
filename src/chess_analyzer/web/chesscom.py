@@ -102,7 +102,7 @@ def list_archives(username: str) -> dict:
     }
 
 
-def _standard_games(client: Any, username: str, year: int, month: int) -> list[dict]:
+def _supported_games(client: Any, username: str, year: int, month: int) -> list[dict]:
     payload = client.get_player_games_by_month(username, year=year, month=month).json
     if not isinstance(payload, dict) or not isinstance(payload.get("games"), list):
         raise ValueError("Missing games list.")
@@ -110,9 +110,9 @@ def _standard_games(client: Any, username: str, year: int, month: int) -> list[d
     for game in payload["games"]:
         if not isinstance(game, dict):
             raise ValueError("Invalid game.")
-        # Monthly archives only contain completed games. Exclude variants and
-        # entries lacking a usable PGN rather than offering a broken import.
-        if game.get("rules") != "chess":
+        # Exclude unsupported variants and entries lacking a usable PGN rather
+        # than offering a broken import. Monthly archives contain completed games.
+        if game.get("rules") not in ("chess", "chess960"):
             continue
         pgn = game.get("pgn")
         if not isinstance(pgn, str) or not pgn.strip():
@@ -138,6 +138,7 @@ def _standard_games(client: Any, username: str, year: int, month: int) -> list[d
         games.append(
             {
                 **players,
+                "rules": game["rules"],
                 "end_time": end_time,
                 "time_class": str(game.get("time_class", "chess")),
                 "time_control": str(game.get("time_control", "?")),
@@ -148,7 +149,7 @@ def _standard_games(client: Any, username: str, year: int, month: int) -> list[d
 
 
 def list_games(username: str, *, year: int, month: int, page: int = 1) -> dict:
-    """Return one page of completed standard games with PGNs for local import.
+    """Return completed standard and Chess960 games with PGNs for local import.
 
     Fetch only the requested month, not the whole account history. Validation
     precedes network access. Public results are cached in memory for 60 seconds;
@@ -163,7 +164,7 @@ def list_games(username: str, *, year: int, month: int, page: int = 1) -> dict:
         raise ValueError("Choose a valid game page.")
     games = _fetch(
         f"chesscom:games:{username}:{year}:{month}",
-        lambda client: _standard_games(client, username, year, month),
+        lambda client: _supported_games(client, username, year, month),
     )
     pages = max(1, (len(games) + PAGE_SIZE - 1) // PAGE_SIZE)
     if page > pages:

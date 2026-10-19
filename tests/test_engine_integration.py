@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 import chess
+import chess.pgn
 import pytest
 
 from chess_analyzer import PGNAnalyzer, StockfishClient
@@ -50,3 +51,18 @@ def test_real_engine_finds_white_and_black_mates(live_settings):
             assert evaluation.cp is None
             position.push_uci(evaluation.best_move_uci)
             assert position.is_checkmate()
+
+
+def test_real_engine_chess960_and_standard_on_same_process(live_settings):
+    board = chess.Board.from_chess960_pos(42)
+    game = chess.pgn.Game.from_board(board)
+    game.add_main_variation(next(iter(board.legal_moves)))
+    with StockfishClient(live_settings) as client:
+        result = PGNAnalyzer(client).analyze(str(game))
+        assert result.chess960
+        assert client._engine.options["UCI_Chess960"].is_managed()
+        for move in result.moves:
+            before = chess.Board(move.fen_before, chess960=True)
+            assert chess.Move.from_uci(move.best_move_uci) in before.legal_moves
+        assert client.evaluate(chess.STARTING_FEN).cp is not None
+        assert not PGNAnalyzer(client).analyze("1. e4 *").chess960

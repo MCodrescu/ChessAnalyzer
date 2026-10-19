@@ -129,7 +129,8 @@ async function loadMonth(page, signal) {
     const date = new Date(game.end_time * 1000).toLocaleString(undefined, {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
-    const label = `${date} · ${playerLabel(game.white)} vs ${playerLabel(game.black)} · ${game.time_class} ${game.time_control} · ${resultLabel(game)}`;
+    const variant = game.rules === 'chess960' ? ' · Chess960' : '';
+    const label = `${date} · ${playerLabel(game.white)} vs ${playerLabel(game.black)}${variant} · ${game.time_class} ${game.time_control} · ${resultLabel(game)}`;
     $('chesscom-game').add(new Option(label, String(index)));
   }
   if (games.length) $('chesscom-game').selectedIndex = 0;
@@ -137,7 +138,7 @@ async function loadMonth(page, signal) {
   $('games-page').textContent = `${data.total} games · ${currentPage} / ${pages}`;
   $('chesscom-status').textContent = games.length
     ? `Choose a game for ${username}, then select Analyze game. Dates use your local time.`
-    : 'No completed standard games with importable PGNs in this month. Try another archive month.';
+    : 'No completed standard or Chess960 games with importable PGNs in this month. Try another archive month.';
 }
 
 form.addEventListener('submit', (event) => {

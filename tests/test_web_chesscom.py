@@ -113,7 +113,7 @@ def test_empty_archives_are_valid(web_client, provider):
 def test_paginated_games_are_sorted_and_filtered(web_client, provider):
     provider.monthly = {
         "games": [completed_game(i) for i in range(1, 27)]
-        + [completed_game(30, rules="chess960"), completed_game(31, pgn="")]
+        + [completed_game(30, rules="atomic"), completed_game(31, pgn="")]
         + [completed_game(32, pgn="x" * 100_001)]
     }
     params = {"username": "player", "year": "2026", "month": "10"}
@@ -154,14 +154,26 @@ def test_invalid_month_or_page_never_fetches(web_client, provider, params):
     assert not provider.calls
 
 
-def test_month_without_standard_games_is_empty(web_client, provider):
-    provider.monthly = {"games": [completed_game(rules="chess960")]}
+def test_month_without_supported_games_is_empty(web_client, provider):
+    provider.monthly = {"games": [completed_game(rules="atomic")]}
     response = web_client.get(
         ENDPOINT, {"username": "player", "year": 2026, "month": 10}
     )
     assert response.status_code == 200
     assert response.json()["total"] == 0
     assert response.json()["games"] == []
+
+
+def test_chess960_games_are_offered_with_variant_label(web_client, provider):
+    pgn = '[Variant "Chess960"]\n[FEN "4k3/8/8/8/8/8/8/R1K2R2 w KQ - 0 1"]\n\n1. O-O *'
+    provider.monthly = {"games": [completed_game(rules="chess960", pgn=pgn)]}
+    response = web_client.get(
+        ENDPOINT, {"username": "player", "year": 2026, "month": 10}
+    )
+    assert response.status_code == 200
+    game = response.json()["games"][0]
+    assert game["rules"] == "chess960"
+    assert game["pgn"] == pgn
 
 
 def test_cache_normalizes_username_and_is_per_month(web_client, provider):

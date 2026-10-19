@@ -208,7 +208,7 @@ def test_missing_end_time():
         get_latest_game(client, "player")
 
 
-@pytest.mark.parametrize("rules", ["chess960", "bughouse", None, "", 12])
+@pytest.mark.parametrize("rules", ["bughouse", None, "", 12])
 def test_latest_unsupported_variant_is_not_skipped(rules):
     client = FakeClient(
         {"archives": [archive(2026, 10), archive(2026, 2)]},
@@ -250,6 +250,18 @@ def test_older_unsupported_or_missing_pgn_game_does_not_hide_latest():
         {(2026, 10): {"games": [game(10, rules="chess960", pgn=None), latest]}},
     )
     assert get_latest_game(client, "player") is latest
+
+
+@pytest.mark.parametrize("rules", [None, "chess960"])
+def test_latest_chess960_game_is_supported(rules):
+    latest = game(20, rules="chess960")
+    client = FakeClient(
+        {"archives": [archive(2026, 10)]},
+        {(2026, 10): {"games": [latest, game(30)]}},
+    )
+    if rules is None:
+        latest["end_time"] = 40
+    assert get_latest_game(client, "player", rules=rules) is latest
 
 
 @pytest.mark.parametrize("stage", ["archives", "month"])

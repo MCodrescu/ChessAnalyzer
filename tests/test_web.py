@@ -38,9 +38,9 @@ def fake_engine(monkeypatch):
             self.fens = []
             self.instances.append(self)
 
-        def evaluate(self, fen):
+        def evaluate(self, fen, *, chess960=False):
             self.fens.append(fen)
-            board = chess.Board(fen)
+            board = chess.Board(fen, chess960=chess960)
             return PositionEvaluation(
                 cp=25, best_move_uci=next(iter(board.legal_moves)).uci()
             )
@@ -73,6 +73,7 @@ def test_analysis_roundtrip(web_client, fake_engine):
     data = response.json()
     assert data["headers"]["White"] == "Alice"
     assert data["initial_fen"] == chess.STARTING_FEN
+    assert data["chess960"] is False
     assert len(data["moves"]) == 2
     assert data["moves"][0]["played_move_san"] == "e4"
     assert data["moves"][1]["player"] == "black"
@@ -180,6 +181,35 @@ def test_mate_result_is_serializable(fake_engine):
     assert result["moves"][-1]["estimated_cp_loss"] is None
 
 
+def test_chess960_web_payload_and_castling_best_preview(
+    web_client, fake_engine, monkeypatch
+):
+    def evaluate(self, fen, *, chess960=False):
+        assert chess960
+        self.fens.append(fen)
+        board = chess.Board(fen, chess960=chess960)
+        castles = list(board.generate_castling_moves())
+        move = castles[0] if castles else next(iter(board.legal_moves))
+        return PositionEvaluation(cp=25, best_move_uci=move.uci())
+
+    monkeypatch.setattr(fake_engine, "evaluate", evaluate)
+    fen = "4k3/8/8/8/8/8/8/R1K2R2 w KQ - 0 1"
+    pgn = f'[Variant "Chess960"]\n[SetUp "1"]\n[FEN "{fen}"]\n\n1. O-O *'
+    response = web_client.post(
+        "/api/analyze/", {"pgn": pgn}, content_type="application/json"
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["chess960"] is True
+    assert result["initial_fen"] == fen
+    move = result["moves"][0]
+    assert move["played_move_uci"] == "c1f1"
+    board = chess.Board(fen, chess960=True)
+    board.push_uci(move["best_move_uci"])
+    assert move["best_fen"] == board.fen()
+    assert fake_engine.instances[0].closed
+
+
 def test_client_closes_after_failure(monkeypatch, fake_engine):
     def fail(self, fen):
         raise StockfishEngineError("Internal path must not be exposed")
@@ -227,4 +257,3 @@ def test_real_engine_web_payload(monkeypatch):
     for move in result["moves"]:
         board = chess.Board(move["fen_before"])
         assert chess.Move.from_uci(move["best_move_uci"]) in board.legal_moves
-

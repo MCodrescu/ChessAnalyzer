@@ -68,3 +68,4 @@ class GameAnalysis:
     moves: tuple[MoveAnalysis, ...]
     analysis_depth: int
     analysis_time_seconds: float | None = None
+    chess960: bool = False

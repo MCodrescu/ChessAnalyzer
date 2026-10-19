@@ -1,6 +1,6 @@
 # ChessAnalyzer
 
-Analyze standard-chess PGNs with a **local Stockfish engine**, not a remote
+Analyze standard-chess and Chess960 PGNs with a **local Stockfish engine**, not a remote
 evaluation API. Python communicates with an OS-installed executable over UCI via
 python-chess. No Stockfish API key, HTTP rate limits, or committed engine binaries.
 Chess.com's public API is used only to download games in the notebook and web
@@ -47,6 +47,21 @@ analysis. Escape or the close button dismisses it without losing the current
 review or game selection. Selecting a game never starts analysis by itself.
 Left/right arrows navigate moves;
 Home/End jump to the first/last move. The board can be flipped.
+
+Click a piece and then a highlighted destination, or drag it, to try legal moves
+for either side from the displayed position (even before loading a game).
+Castling, en passant, and a promotion-piece chooser are supported. **Undo** takes
+back one trial move; **Reset** returns to the reviewed position. Selecting a game
+move, preview tab, or graph position also discards the trial line. Trial moves
+never change the imported game, accuracy, or graph; their evaluation is marked
+**Not searched**, because they are not sent to Stockfish.
+
+Chess960 games use their PGN variant and starting FEN; no manual mode switch is
+needed. Legal interactive moves use Chessops locally in the browser. To castle
+in Chess960, move the king onto the participating rook (including when the king
+or rook already occupies its final castling square). Castling arrows/highlights
+use these same king-to-rook squares; SAN still displays `O-O` or `O-O-O`.
+Standard chess retains king-to-destination-square castling.
 
 The board and navigation fit the browser's viewport height. The review panels
 show game accuracy, the evaluation graph, move insights, and the move list;
@@ -118,8 +133,9 @@ part of the web interface; the CLI and JSON analysis API still accept PGNs.
   cannot be analyzed accidentally. Selection changes never start engine analysis
   automatically or overwrite an existing review until the new analysis completes.
 
-Only completed standard-chess games with nonempty PGNs within the import-size
-limit are offered; live/in-progress games and variants are excluded. An empty
+Only completed standard-chess and Chess960 games with nonempty PGNs within the
+import-size limit are offered; live/in-progress games and other variants are
+excluded. Chess960 entries are labeled in the game picker. An empty
 month leaves the month picker available so you can choose an older archive.
 Fetching needs internet and may lag behind Chess.com's cached public data;
 Chess.com errors/rate limits are displayed in the modal; the current review
@@ -191,6 +207,13 @@ worker its own context-managed client and budget its resources separately.
 Engine discovery, startup, timeout, process, and result failures raise
 `StockfishEngineError`. Invalid FEN/PGN input is rejected before searching.
 
+For direct Chess960 position searches, pass `chess960=True` to either method;
+FEN alone does not reliably identify the variant. PGN analysis carries this flag
+automatically, and python-chess manages Stockfish's `UCI_Chess960` option. Results
+include a `chess960` boolean; Chess960 UCI castling moves use king-to-rook notation.
+Injected evaluators must accept the `chess960=True` keyword to analyze Chess960;
+standard-game calls retain the original FEN-only calling convention.
+
 CLI analysis accepts one PGN file and writes the complete result as JSON:
 
 ```bash
@@ -236,7 +259,9 @@ migration**. Run cells in order to fetch MCodr's latest completed standard-chess
 game, analyze it locally, then view move comparisons and average CP loss.
 The analysis cell loads the local dotenv file explicitly; no key is needed.
 Fetching requires internet, but all engine searches are local. Rerunning analysis
-starts over. Chess960 and other variants are excluded. The username, rules filter,
+starts over. The default `chess` rules filter excludes Chess960; use `chess960`
+for Chess960 games or `None` for the latest supported game without filtering.
+Other variants remain unsupported. The username, rules filter,
 and User-Agent live in [src/chess_analyzer/config.py](src/chess_analyzer/config.py).
 The notebook reports depth/time caps, resource settings, searches, and elapsed time.
 
