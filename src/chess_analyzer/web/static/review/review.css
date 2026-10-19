@@ -1,11 +1,11 @@
 :root { color-scheme: dark; --bg: #121519; --panel: #1d2228; --border: #303740; --muted: #9ba5b1; --text: #eef2f6; --accent: #bce580; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
-button, textarea, input, select { font: inherit; }
+button, input, select { font: inherit; }
 button { cursor: pointer; border: 1px solid transparent; border-radius: 7px; color: inherit; background: transparent; padding: 10px 14px; transition: background .15s; }
 button:hover:not(:disabled) { background: #343e46; }
 button:disabled { opacity: .38; cursor: default; }
-button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible, .file-label:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .site-header { padding: 8px max(20px, calc((100vw - 1320px) / 2)); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-shrink: 0; }
 .header-actions { display: flex; align-items: center; gap: 16px; }
 .brand { text-decoration: none; color: var(--text); font-weight: 750; font-size: 21px; display: flex; align-items: center; gap: 10px; }
@@ -41,17 +41,14 @@ main { max-width: 1320px; width: 100%; margin: 0 auto; padding: 10px 20px; flex:
 h2 { font-size: 14px; font-weight: 650; margin: 0; }
 .small-label { color: var(--muted); font-size: 9px; letter-spacing: .09em; }
 form > label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 8px; }
-textarea { display: block; width: 100%; resize: vertical; max-height: 300px; min-height: 85px; padding: 12px; background: #15191e; border: 1px solid var(--border); border-radius: 7px; color: #dce4ec; font: 11px/1.7 ui-monospace, monospace; }
+.selection-summary { padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: #15191e; overflow-wrap: anywhere; }
 .import-actions { display: flex; gap: 10px; justify-content: space-between; align-items: center; margin-top: 12px; }
 .username-search { display: flex; gap: 8px; }
 .username-search input, #chesscom-picker select { background: #15191e; border: 1px solid var(--border); border-radius: 6px; padding: 9px; color: var(--text); min-width: 0; font-size: 11px; }
 .username-search input { flex: 1; width: 0; }.username-search button { flex-shrink: 0; }
 #chesscom-picker { margin-top: 14px; }#chesscom-picker label { display: block; color: var(--muted); font-size: 11px; margin: 10px 0 7px; }#chesscom-picker select { width: 100%; }#chesscom-game option { padding: 8px 4px; }
-.game-pagination { display: flex; align-items: center; gap: 6px; margin-top: 9px; }.game-pagination button { padding: 7px 9px; }.game-pagination #chesscom-load { margin-left: auto; font-size: 10px; }#games-page { font-size: 9px; }
-.import-divider { border-top: 1px solid var(--border); text-align: center; margin: 12px 0 5px; }.import-divider span { position: relative; top: -7px; padding: 0 10px; background: var(--panel); color: var(--muted); font-size: 9px; letter-spacing: .09em; }
+.game-pagination { display: flex; align-items: center; gap: 6px; margin-top: 9px; }.game-pagination button { padding: 7px 9px; }#games-page { font-size: 9px; }
 .lookup-error { background: #50272b; color: #ffc4c0; padding: 10px; border-radius: 6px; font-size: 12px; line-height: 1.6; }
-.file-label { font-size: 11px; cursor: pointer; position: relative; color: #c0cad4; padding: 7px 0; }
-.file-label input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .primary { background: var(--accent); color: #1b2711; font-weight: 700; font-size: 12px; min-width: 145px; }.primary:hover:not(:disabled) { background: #cdef9c; }
 #status { font-size: 11px; line-height: 1.6; color: var(--muted); margin: 13px 0 0; }
 .review-status #status { margin: 0; }.review-status { min-width: 0; }
@@ -85,7 +82,7 @@ textarea { display: block; width: 100%; resize: vertical; max-height: 300px; min
 #import-dialog { color: var(--text); background: var(--panel); border: 1px solid #47525e; border-radius: 12px; width: min(620px, calc(100vw - 24px)); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); padding: 20px; box-shadow: 0 24px 100px #0009; overflow-y: auto; overscroll-behavior: contain; }
 #import-dialog::backdrop { background: #05080dbc; backdrop-filter: blur(3px); }
 #import-dialog .panel-heading { margin-bottom: 8px; }#import-heading { font-size: 19px; }#close-import { padding: 5px 10px; }
-#import-description { margin: 0 0 18px; }.modal-demo { margin-top: 12px; font-size: 11px; }#import-status { margin-bottom: 0; }
+#import-description { margin: 0 0 18px; }#import-status { margin-bottom: 0; }
 footer { display: flex; justify-content: space-between; gap: 8px; font-size: 9px; color: #818d9a; border-top: 1px solid var(--border); padding-top: 6px; flex-shrink: 0; flex-wrap: wrap; }footer a { color: #adbca4; }
 @media (min-width: 851px) {
 	.review-column { display: grid; grid-template-rows: auto auto auto minmax(70px, 1fr); }

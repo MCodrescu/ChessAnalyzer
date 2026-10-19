@@ -48,8 +48,10 @@ test('finds a username, selects a game and sends its PGN for analysis', async ({
   await expect(page.locator('#chesscom-game option').first()).toContainText('1–0');
   await expect(page.locator('#chesscom-game option').last()).toContainText('½–½');
   await page.locator('#chesscom-game').selectOption('1');
-  await page.getByRole('button', { name: 'Load selected game' }).click();
-  await expect(page.locator('#pgn')).toHaveValue(pgns[1]);
+  await expect(page.locator('#selected-game')).toContainText('½–½');
+  await expect(page.getByRole('button', { name: 'Load selected game' })).toHaveCount(0);
+  await expect(page.locator('textarea, input[type="file"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toHaveCount(1);
   await expect(page.locator('#import-dialog')).toBeVisible();
   expect(analysisPGN).toBeUndefined();
   await page.getByRole('button', { name: 'Analyze game' }).click();
@@ -81,13 +83,13 @@ test('browses game pages and months without leaving stale games on failure', asy
   await expect(page.locator('#games-page')).toHaveText('26 games · 1 / 2');
   await page.getByRole('button', { name: 'Next game page' }).click();
   await expect(page.locator('#games-page')).toHaveText('26 games · 2 / 2');
-  await page.getByRole('button', { name: 'Load selected game' }).click();
-  await expect(page.locator('#pgn')).toHaveValue(pgns[1]);
+  await expect(page.locator('#selected-game')).toContainText('½–½');
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeEnabled();
   await page.getByRole('button', { name: 'Previous game page' }).click();
   await expect(page.locator('#games-page')).toHaveText('26 games · 1 / 2');
   await page.locator('#chesscom-month').selectOption('2026-09');
   await expect(page.locator('#chesscom-error')).toHaveText('Unable to reach Chess.com.');
-  await expect(page.getByRole('button', { name: 'Load selected game' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
   await expect(page.locator('#chesscom-game option')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Find games', exact: true })).toBeEnabled();
   expect(calls.at(-1)).toEqual({ username: 'player', year: '2026', month: '09', page: '1' });
@@ -118,7 +120,7 @@ test('handles unknown users, empty archives, and months with no standard games',
   await page.getByRole('button', { name: 'Find games', exact: true }).click();
   await expect(page.locator('#chesscom-status')).toContainText('No completed standard games');
   await expect(page.locator('#chesscom-month')).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Load selected game' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
 });
 
 test('editing the username cancels pending results and invalidates old selections', async ({ page }) => {
@@ -147,5 +149,102 @@ test('editing the username cancels pending results and invalidates old selection
   await expect(page.locator('#chesscom-game option')).toHaveCount(2);
   await page.locator('#chesscom-username').fill('different');
   await expect(page.locator('#chesscom-picker')).toBeHidden();
-  await expect(page.locator('#chesscom-load')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
+});
+
+test('pending month changes clear the old game before lookup finishes', async ({ page }) => {
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  let analyses = 0;
+  await page.route('**/api/analyze/', (route) => {
+    analyses++;
+    return route.fulfill({ status: 503, json: { error: 'Unexpected analysis.' } });
+  });
+  await page.route(endpoint, async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if (!params.has('month')) return route.fulfill({ json: archives });
+    if (params.get('month') === '09') {
+      await pending;
+      return route.fulfill({ status: 503, json: { error: 'Month lookup failed.' } });
+    }
+    return route.fulfill({ json: { username: 'player', page: 1, pages: 1, total: 2, games } });
+  });
+  await openLoader(page);
+  await page.locator('#chesscom-username').fill('Player');
+  await page.getByRole('button', { name: 'Find games', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeEnabled();
+  await page.locator('#chesscom-month').selectOption('2026-09');
+  await expect(page.locator('#chesscom-form')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
+  await expect(page.locator('#selected-game')).toContainText('Choose a game');
+  await page.locator('#analysis-form').evaluate((form) => form.requestSubmit());
+  release();
+  await expect(page.locator('#chesscom-error')).toHaveText('Month lookup failed.');
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
+  expect(analyses).toBe(0);
+});
+
+test('analysis locks the current selection, rejects duplicate submits, and allows retry', async ({ page }) => {
+  await page.route(endpoint, (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: params.has('month')
+      ? { username: 'player', page: 1, pages: 1, total: 2, games }
+      : archives });
+  });
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const submitted = [];
+  await page.route('**/api/analyze/', async (route) => {
+    submitted.push(route.request().postDataJSON().pgn);
+    await pending;
+    return route.fulfill({ status: 503, json: { error: 'Engine unavailable. Try again.' } });
+  });
+  await openLoader(page);
+  await page.locator('#chesscom-username').fill('Player');
+  await page.getByRole('button', { name: 'Find games', exact: true }).click();
+  await expect(page.locator('#chesscom-game option')).toHaveCount(2);
+  await page.locator('#chesscom-game').selectOption('1');
+  await page.getByRole('button', { name: 'Analyze game' }).click();
+  await expect(page.getByRole('button', { name: 'Analyzing…' })).toBeDisabled();
+  for (const id of ['chesscom-username', 'chesscom-game', 'chesscom-month', 'chesscom-search', 'demo']) {
+    await expect(page.locator(`#${id}`)).toBeDisabled();
+  }
+  await page.locator('#analysis-form').evaluate((form) => form.requestSubmit());
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Load game', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Analyzing…' })).toBeDisabled();
+  release();
+  await expect(page.locator('#import-error')).toHaveText('Engine unavailable. Try again.');
+  expect(submitted).toEqual([pgns[1]]);
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Analyze game' }).click();
+  await expect.poll(() => submitted.length).toBe(2);
+  expect(submitted).toEqual([pgns[1], pgns[1]]);
+});
+
+test('selecting the example cancels lookup without letting late results replace it', async ({ page }) => {
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  await page.route(endpoint, async (route) => {
+    await pending;
+    return route.fulfill({ json: archives });
+  });
+  let submitted;
+  await page.route('**/api/analyze/', (route) => {
+    submitted = route.request().postDataJSON().pgn;
+    return route.fulfill({ status: 503, json: { error: 'Test engine unavailable.' } });
+  });
+  await openLoader(page);
+  await page.locator('#chesscom-username').fill('Player');
+  const requested = page.waitForRequest((request) => endpoint.test(request.url()));
+  await page.getByRole('button', { name: 'Find games', exact: true }).click();
+  await requested;
+  await page.getByRole('button', { name: 'Use example game' }).click();
+  release();
+  await expect(page.locator('#selected-game')).toContainText('Fool’s mate');
+  await expect(page.locator('#chesscom-picker')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Analyze game' }).click();
+  await expect(page.locator('#import-error')).toHaveText('Test engine unavailable.');
+  expect(submitted).toContain('1. f3 e5 2. g4 Qh4#');
 });

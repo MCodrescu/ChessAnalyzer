@@ -40,10 +40,11 @@ never falls back silently. No engine is downloaded or started during imports.
 
 The web application uses Lichess's **Chessground** board and the same local
 analyzer as the CLI/notebook. Select **Load game** to open the game-loading modal.
-Choose a Chess.com game, paste a PGN, open a PGN file, or load the example;
-select **Analyze game**, then click any move. The modal closes after successful
+Choose a Chess.com game and select **Analyze game**, then click any move. There
+is no separate load/import step or manual PGN form. **Use example game** selects
+a built-in sample without needing a Chess.com lookup. The modal closes after successful
 analysis. Escape or the close button dismisses it without losing the current
-review or the PGN being edited. Loading a game never starts analysis by itself.
+review or game selection. Selecting a game never starts analysis by itself.
 Left/right arrows navigate moves;
 Home/End jump to the first/last move. The board can be flipped.
 
@@ -99,8 +100,8 @@ above. Node/npm are build-time tools only. All board JavaScript, styles, and
 piece images are served locally; no CDN or Lichess API is used. Rebuild after
 changing frontend dependencies. Build before packaging a wheel so its static
 assets are included. No database or migrations are needed, and PGNs/results are
-not persisted; refreshing clears the review. Lichess games can also be exported
-as PGNs and imported here.
+not persisted; refreshing clears the review. Manual PGN paste/file import is not
+part of the web interface; the CLI and JSON analysis API still accept PGNs.
 
 #### Choose a Chess.com game
 
@@ -108,18 +109,21 @@ as PGNs and imported here.
   (no login/API key).
 2. The newest available archive month opens automatically. Choose another
   **Archive month** to browse older games.
-3. Select a game, then **Load selected game**. Lists show both players/ratings,
+3. Select a game. Lists show both players/ratings,
   local completion date/time, time control, and result. Games are newest first,
   with 25 per page; use the page arrows for more.
-4. Select **Analyze game** to run the existing Stockfish review. Loading a game
-  never starts engine analysis automatically or overwrites an existing review
-  until the new analysis completes.
+4. Select **Analyze game** to analyze the current selection directly. The button
+  is disabled until a game is available, during lookup, and during analysis.
+  Changing username, month, or page clears the old selection immediately so it
+  cannot be analyzed accidentally. Selection changes never start engine analysis
+  automatically or overwrite an existing review until the new analysis completes.
 
 Only completed standard-chess games with nonempty PGNs within the import-size
 limit are offered; live/in-progress games and variants are excluded. An empty
 month leaves the month picker available so you can choose an older archive.
 Fetching needs internet and may lag behind Chess.com's cached public data;
-Chess.com errors/rate limits are displayed without affecting PGN import.
+Chess.com errors/rate limits are displayed in the modal; the current review
+remains available, and the built-in example can be analyzed without a lookup.
 
 Lookup makes one public API request at a time per web process, using the existing
 Chess.com Python client (30-second HTTP timeout; no automatic retries). Public

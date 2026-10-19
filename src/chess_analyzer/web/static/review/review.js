@@ -1,7 +1,7 @@
 import { formatEvaluation, positionFor } from './review-state.js';
 import { ReviewSummary } from './review-summary.js';
 import { importDialog, setReviewStatus } from './import-dialog.js';
-import './chesscom-import.js';
+import { selectedGamePGN, setAnalysisBusy, setBoardReady } from './chesscom-import.js';
 
 const $ = (id) => document.getElementById(id);
 let ground;
@@ -27,9 +27,10 @@ try {
     animation: { enabled: true, duration: 180 },
     drawable: { enabled: false, visible: true },
   });
+  setBoardReady(true);
 } catch {
   showError('Board assets are missing. Run npm ci and npm run build, then reload.');
-  $('analyze-button').disabled = true;
+  setBoardReady(false);
 }
 
 function renderMoveList() {
@@ -110,9 +111,10 @@ function selectMove(index, nextPreview = 'before') {
 
 $('analysis-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!ground) return;
+  const pgn = selectedGamePGN();
+  if (!ground || !pgn) return;
   showError('');
-  $('analyze-button').disabled = true;
+  setAnalysisBusy(true);
   $('analyze-button').textContent = 'Analyzing…';
   $('analysis-form').setAttribute('aria-busy', 'true');
   setReviewStatus('Stockfish is reviewing every position. A typical game takes 10–30 seconds; longer games can take several minutes. Keep this tab open.');
@@ -121,7 +123,7 @@ $('analysis-form').addEventListener('submit', async (event) => {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
-      body: JSON.stringify({ pgn: $('pgn').value }),
+      body: JSON.stringify({ pgn }),
     });
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) throw new Error('The server returned an unexpected response. Check CSRF settings, request limits, and server timeouts.');
@@ -142,33 +144,12 @@ $('analysis-form').addEventListener('submit', async (event) => {
     showError(error.message || 'Unable to reach the analysis server.');
     setReviewStatus('Analysis did not complete. Your previous review is still available.');
   } finally {
-    $('analyze-button').disabled = false;
-    $('analyze-button').textContent = 'Analyze game ↗';
+    setAnalysisBusy(false);
+    $('analyze-button').textContent = 'Analyze game';
     $('analysis-form').setAttribute('aria-busy', 'false');
   }
 });
 
-$('pgn-file').addEventListener('change', async (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-  showError('');
-  if (file.size > 100_000) {
-    showError('Choose a PGN file smaller than 100 KB.');
-    return;
-  }
-  try {
-    $('pgn').value = await file.text();
-    setReviewStatus('PGN loaded. Select Analyze game to begin.');
-  } catch {
-    showError('Unable to read this PGN file.');
-  }
-});
-
-$('demo').addEventListener('click', () => {
-  $('pgn').value = '[Event "A quick lesson"]\n[White "Curious player"]\n[Black "Club opponent"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1';
-  setReviewStatus('Example loaded: Fool’s mate. Select Analyze game to explore.');
-  $('pgn').focus();
-});
 $('flip').addEventListener('click', () => {
   if (!ground) return;
   ground.toggleOrientation();

@@ -19,7 +19,7 @@
   <main>
     <section class="workspace" aria-label="Game analysis workspace">
       <div class="board-column">
-        <div class="player-card"><span class="avatar">♚</span><div><strong id="black-player">Black</strong><span id="game-event">Import a game to get started</span></div><span class="color-dot black"></span></div>
+        <div class="player-card"><span class="avatar">♚</span><div><strong id="black-player">Black</strong><span id="game-event">Choose a game to get started</span></div><span class="color-dot black"></span></div>
         <div class="board-shell"><div id="board" class="cg-wrap" role="img" aria-label="Chessboard, starting position"></div></div>
         <div class="player-card"><span class="avatar light">♔</span><div><strong id="white-player">White</strong><span id="game-result">Standard chess</span></div><span class="color-dot white"></span></div>
         <div class="board-toolbar">
@@ -79,7 +79,7 @@
         </section>
         <section class="panel moves-panel">
           <div class="panel-heading"><h2>Game moves</h2><span id="analysis-settings" class="small-label">NOT ANALYZED</span></div>
-          <div id="move-list" class="move-list" aria-label="Click a move to review"><div class="empty-state"><span aria-hidden="true">♟</span><p>Your game, move by move.</p><small>Import a PGN to see every decision here.</small></div></div>
+          <div id="move-list" class="move-list" aria-label="Click a move to review"><div class="empty-state"><span aria-hidden="true">♟</span><p>Your game, move by move.</p><small>Select and analyze a game to see every decision here.</small></div></div>
         </section>
       </aside>
     </section>
@@ -87,7 +87,7 @@
   </main>
   <dialog id="import-dialog" aria-labelledby="import-heading" aria-describedby="import-description">
     <div class="panel-heading"><h2 id="import-heading">Load a game</h2><button id="close-import" type="button" class="secondary" aria-label="Close game loader">✕</button></div>
-    <p id="import-description" class="muted">Choose a public Chess.com game or import a PGN. Your current review stays available until the next analysis finishes.</p>
+    <p id="import-description" class="muted">Choose a public Chess.com game, then select Analyze game. Your current review stays available until the next analysis finishes.</p>
     <form id="chesscom-form" action="{% url 'chesscom-games' %}" method="get">
       <label for="chesscom-username">Find a game by Chess.com username</label>
       <div class="username-search">
@@ -104,19 +104,15 @@
         <button type="button" id="games-previous" class="secondary" aria-label="Previous game page" disabled>←</button>
         <span id="games-page" class="muted"></span>
         <button type="button" id="games-next" class="secondary" aria-label="Next game page" disabled>→</button>
-        <button type="button" id="chesscom-load" class="secondary" disabled>Load selected game</button>
       </div>
     </div>
     <p id="chesscom-status" class="muted" role="status" aria-live="polite">Public completed games only. No login needed.</p>
     <p id="chesscom-error" class="lookup-error" role="alert" hidden></p>
-    <div class="import-divider"><span>OR IMPORT PGN</span></div>
     <form id="analysis-form" action="{% url 'analyze' %}">
       {% csrf_token %}
-      <label for="pgn">Paste a PGN or choose a PGN file</label>
-      <textarea id="pgn" name="pgn" rows="4" maxlength="100000" required spellcheck="false" placeholder='[White "You"]&#10;[Black "Opponent"]&#10;&#10;1. e4 e5 2. Nf3 Nc6 *'></textarea>
-      <div class="import-actions"><label class="file-label" for="pgn-file">↥ Open PGN<input id="pgn-file" type="file" accept=".pgn,text/plain,application/x-chess-pgn"></label><button id="analyze-button" type="submit" class="primary">Analyze game <span aria-hidden="true">↗</span></button></div>
+      <p id="selected-game" class="selection-summary muted" role="status" aria-live="polite">Choose a game above to enable analysis.</p>
+      <div class="import-actions"><button type="button" id="demo" class="secondary">Use example game</button><button id="analyze-button" type="submit" class="primary" disabled>Analyze game</button></div>
     </form>
-    <button type="button" id="demo" class="secondary modal-demo">Load example game</button>
     <p id="import-status" class="muted" role="status" aria-live="polite">Analysis stays local. No games saved to disk.</p>
     <p id="import-error" class="lookup-error" role="alert" hidden></p>
   </dialog>

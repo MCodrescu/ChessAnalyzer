@@ -25,7 +25,7 @@ async function loadReview(page, review = payload) {
   await page.goto('/');
   await expect(page.locator('#board piece')).toHaveCount(32);
   await page.getByRole('button', { name: 'Load game', exact: true }).click();
-  await page.getByRole('button', { name: 'Load example game' }).click();
+  await page.getByRole('button', { name: 'Use example game' }).click();
   await page.getByRole('button', { name: 'Analyze game' }).click();
   await expect(page.locator('#status')).toContainText('Analysis complete');
 }
@@ -122,7 +122,8 @@ test('game loader traps focus, dismisses with Escape, and preserves the review',
   await page.getByRole('button', { name: 'Next move', exact: true }).click();
   await page.getByRole('button', { name: 'Load game', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Load a game' })).toBeVisible();
-  await page.locator('#pgn').fill('1. d4 *');
+  await page.locator('#chesscom-username').fill('OtherPlayer');
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
   for (let index = 0; index < 12; index++) {
     await page.keyboard.press('Tab');
     expect(await page.locator('#import-dialog').evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
@@ -132,7 +133,8 @@ test('game loader traps focus, dismisses with Escape, and preserves the review',
   await expect(page.getByRole('button', { name: 'Load game', exact: true })).toBeFocused();
   await expect(page.locator('#move-counter')).toHaveText('2 / 2');
   await page.getByRole('button', { name: 'Load game', exact: true }).click();
-  await expect(page.locator('#pgn')).toHaveValue('1. d4 *');
+  await expect(page.locator('#chesscom-username')).toHaveValue('OtherPlayer');
+  await expect(page.locator('#selected-game')).toContainText('Choose a game');
   await page.getByRole('button', { name: 'Close game loader' }).click();
   await expect(page.locator('#import-dialog')).not.toBeVisible();
 });
@@ -224,7 +226,7 @@ test('player cards follow orientation before analysis and when a new game loads'
   await page.getByRole('button', { name: 'Flip' }).click();
   await expect(page.locator('.board-column > .player-card strong')).toHaveText(['White', 'Black']);
   await page.getByRole('button', { name: 'Load game', exact: true }).click();
-  await page.getByRole('button', { name: 'Load example game' }).click();
+  await page.getByRole('button', { name: 'Use example game' }).click();
   await page.getByRole('button', { name: 'Analyze game' }).click();
   await expect(page.locator('#status')).toContainText('Analysis complete');
   await expect(page.locator('.board-column > .player-card strong')).toHaveText([
@@ -283,10 +285,10 @@ test('move navigation scrolls only the move list, not the page', async ({ page }
   expect(selectedVisible).toBe(true);
 });
 
-test('keyboard navigation ignores the game loader and PGN text field', async ({ page }) => {
+test('keyboard navigation ignores the game loader and username field', async ({ page }) => {
   await loadReview(page);
   await page.getByRole('button', { name: 'Load game', exact: true }).click();
-  await page.locator('#pgn').focus();
+  await page.locator('#chesscom-username').focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('#move-counter')).toHaveText('1 / 2');
   await page.getByRole('button', { name: 'Close game loader' }).focus();
@@ -299,11 +301,12 @@ test('keyboard navigation ignores the game loader and PGN text field', async ({ 
   await expect(page.locator('#move-counter')).toHaveText('1 / 2');
 });
 
-test('file import, server errors, and empty games are handled', async ({ page }) => {
+test('selected-game analysis handles server errors and empty games', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Load game', exact: true }).click();
-  await page.locator('#pgn-file').setInputFiles({ name: 'game.pgn', mimeType: 'text/plain', buffer: Buffer.from('1. e4 *') });
-  await expect(page.locator('#pgn')).toHaveValue('1. e4 *');
+  await expect(page.locator('#pgn, #pgn-file, textarea, input[type="file"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Use example game' }).click();
   await page.route('**/api/analyze/', (route) => route.fulfill({ status: 429, json: { error: 'An analysis is already running.' } }));
   await page.getByRole('button', { name: 'Analyze game' }).click();
   await expect(page.getByRole('dialog').getByRole('alert')).toHaveText('An analysis is already running.');
@@ -325,7 +328,7 @@ test('real Stockfish analysis works through the complete browser workflow', asyn
   await page.goto('/');
   await expect(page.locator('#board piece')).toHaveCount(32);
   await page.getByRole('button', { name: 'Load game', exact: true }).click();
-  await page.getByRole('button', { name: 'Load example game' }).click();
+  await page.getByRole('button', { name: 'Use example game' }).click();
   await page.getByRole('button', { name: 'Analyze game' }).click();
   await expect(page.locator('#status')).toContainText('Analysis complete', { timeout: 30_000 });
   await expect(page.locator('#move-list button')).toHaveCount(4);

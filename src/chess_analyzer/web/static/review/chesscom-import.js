@@ -1,4 +1,4 @@
-/** Import a public completed game, without starting analysis automatically. */
+/** Select a public completed game for one-click analysis, without manual PGN input. */
 import { setReviewStatus } from './import-dialog.js';
 
 const $ = (id) => document.getElementById(id);
@@ -9,21 +9,61 @@ let currentPage = 1;
 let pages = 1;
 let requestId = 0;
 let controller;
+let selectedPgn = '';
+let lookupBusy = false;
+let analysisBusy = false;
+let boardReady = false;
+
+/** Read the current selection only when it is safe to start a new analysis. */
+export function selectedGamePGN() {
+  return boardReady && !lookupBusy && !analysisBusy ? selectedPgn : '';
+}
+
+/** Keep selection controls locked for the entire in-flight analysis. */
+export function setAnalysisBusy(busy) {
+  analysisBusy = busy;
+  updateControls();
+}
+
+/** Prevent submission if the board assets have not loaded successfully. */
+export function setBoardReady(ready) {
+  boardReady = ready;
+  updateControls();
+}
+
+function selectGame(pgn = '', label = 'Choose a game above to enable analysis.') {
+  selectedPgn = pgn;
+  $('selected-game').textContent = label;
+  if (boardReady) {
+    $('error').hidden = true;
+    $('import-error').hidden = true;
+  }
+  updateControls();
+}
+
+function selectListedGame() {
+  const index = $('chesscom-game').selectedIndex;
+  const game = games[index];
+  selectGame(game?.pgn || '', game ? $('chesscom-game').options[index].textContent : undefined);
+}
 
 function showError(message = '') {
   $('chesscom-error').textContent = message;
   $('chesscom-error').hidden = !message;
 }
 
-function setBusy(busy) {
-  form.setAttribute('aria-busy', String(busy));
+function updateControls() {
+  const busy = lookupBusy || analysisBusy;
+  form.setAttribute('aria-busy', String(lookupBusy));
+  $('chesscom-username').disabled = analysisBusy;
   $('chesscom-search').disabled = busy;
-  $('chesscom-search').textContent = busy ? 'Loading…' : 'Find games';
+  $('chesscom-search').textContent = lookupBusy ? 'Loading…' : 'Find games';
   $('chesscom-month').disabled = busy;
   $('chesscom-game').disabled = busy || !games.length;
-  $('chesscom-load').disabled = busy || !games.length;
   $('games-previous').disabled = busy || !games.length || currentPage <= 1;
   $('games-next').disabled = busy || !games.length || currentPage >= pages;
+  $('demo').disabled = analysisBusy;
+  $('analyze-button').disabled = busy || !boardReady || !selectedPgn;
 }
 
 async function request(params, signal) {
@@ -40,20 +80,25 @@ async function request(params, signal) {
 }
 
 async function runLookup(action) {
+  if (analysisBusy) return;
   controller?.abort();
   controller = new AbortController();
   const id = ++requestId;
   showError();
-  setBusy(true);
+  lookupBusy = true;
+  selectGame();
   $('chesscom-status').textContent = 'Fetching public games from Chess.com…';
   try {
     await action(controller.signal);
   } catch (error) {
     if (id !== requestId || error.name === 'AbortError') return;
     showError(error.message || 'Unable to reach the game lookup server.');
-    $('chesscom-status').textContent = 'Lookup did not complete. Try again or import a PGN below.';
+    $('chesscom-status').textContent = 'Lookup did not complete. Try again or use the example game.';
   } finally {
-    if (id === requestId) setBusy(false);
+    if (id === requestId) {
+      lookupBusy = false;
+      updateControls();
+    }
   }
 }
 
@@ -88,14 +133,16 @@ async function loadMonth(page, signal) {
     $('chesscom-game').add(new Option(label, String(index)));
   }
   if (games.length) $('chesscom-game').selectedIndex = 0;
+  selectListedGame();
   $('games-page').textContent = `${data.total} games · ${currentPage} / ${pages}`;
   $('chesscom-status').textContent = games.length
-    ? `Choose a game for ${username}, then load it for analysis. Dates use your local time.`
+    ? `Choose a game for ${username}, then select Analyze game. Dates use your local time.`
     : 'No completed standard games with importable PGNs in this month. Try another archive month.';
 }
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
+  if (analysisBusy) return;
   $('chesscom-picker').hidden = true;
   games = [];
   runLookup(async (signal) => {
@@ -115,24 +162,33 @@ form.addEventListener('submit', (event) => {
 });
 
 $('chesscom-username').addEventListener('input', () => {
+  if (analysisBusy) return;
   ++requestId;
   controller?.abort();
   username = '';
   games = [];
   $('chesscom-picker').hidden = true;
   showError();
-  setBusy(false);
+  lookupBusy = false;
+  selectGame();
   $('chesscom-status').textContent = 'Public completed games only. No login needed.';
 });
 $('chesscom-month').addEventListener('change', () => runLookup((signal) => loadMonth(1, signal)));
 $('games-previous').addEventListener('click', () => runLookup((signal) => loadMonth(currentPage - 1, signal)));
 $('games-next').addEventListener('click', () => runLookup((signal) => loadMonth(currentPage + 1, signal)));
-$('chesscom-load').addEventListener('click', () => {
-  const index = $('chesscom-game').selectedIndex;
-  if (index < 0 || !games[index]) return;
-  $('pgn').value = games[index].pgn;
-  $('error').hidden = true;
-  $('import-error').hidden = true;
-  setReviewStatus(`Game loaded from Chess.com (${username}). Select Analyze game to begin; any previous review remains until analysis completes.`);
-  $('pgn').focus();
+$('chesscom-game').addEventListener('change', () => {
+  if (!lookupBusy && !analysisBusy) selectListedGame();
+});
+$('demo').addEventListener('click', () => {
+  if (analysisBusy) return;
+  ++requestId;
+  controller?.abort();
+  lookupBusy = false;
+  games = [];
+  $('chesscom-game').replaceChildren();
+  $('chesscom-picker').hidden = true;
+  showError();
+  selectGame('[Event "A quick lesson"]\n[White "Curious player"]\n[Black "Club opponent"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1', 'Example: Curious player vs Club opponent · Fool’s mate');
+  $('chesscom-status').textContent = 'Example selected. No Chess.com lookup needed.';
+  setReviewStatus('Example selected: Fool’s mate. Select Analyze game to explore.');
 });
