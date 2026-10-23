@@ -247,6 +247,169 @@ def test_busy_request_is_rejected(web_client):
         views._analysis_slot.release()
 
 
+def test_position_analysis_roundtrip(web_client, fake_engine):
+    response = web_client.post(
+        "/api/position/", {"fen": chess.STARTING_FEN}, content_type="application/json"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["fen"] == chess.STARTING_FEN
+    board = chess.Board(data["fen"])
+    best = chess.Move.from_uci(data["best_move_uci"])
+    assert best in board.legal_moves
+    assert data["best_move_san"] == board.san(best)
+    assert data["evaluation"]["cp"] == 25
+    assert fake_engine.instances[0].closed
+    assert fake_engine.instances[0].fens == [chess.STARTING_FEN]
+    assert "no-store" in response["Cache-Control"]
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        [],
+        None,
+        {},
+        {"fen": 12},
+        {"fen": "invalid"},
+        {"fen": "8/8/8/8/8/8/8/8 w - - 0 1"},
+        {"fen": "x" * 201},
+        {"fen": chess.STARTING_FEN, "chess960": "true"},
+        {"fen": chess.STARTING_FEN, "chess960": 1},
+    ],
+)
+def test_invalid_position_never_allocates_engine(web_client, fake_engine, data):
+    response = web_client.post(
+        "/api/position/", json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert "error" in response.json()
+    assert not fake_engine.instances
+
+
+def test_position_request_boundaries(web_client, fake_engine):
+    assert web_client.get("/api/position/").status_code == 405
+    assert web_client.post("/api/position/", {"fen": "*"}).status_code == 415
+    assert (
+        web_client.post(
+            "/api/position/", "{", content_type="application/json"
+        ).status_code
+        == 400
+    )
+    with override_settings(DATA_UPLOAD_MAX_MEMORY_SIZE=20):
+        response = web_client.post(
+            "/api/position/",
+            {"fen": chess.STARTING_FEN},
+            content_type="application/json",
+        )
+    assert response.status_code == 413
+    with override_settings(ALLOWED_HOSTS=["testserver"]):
+        client = Client(enforce_csrf_checks=True)
+        assert (
+            client.post(
+                "/api/position/",
+                {"fen": chess.STARTING_FEN},
+                content_type="application/json",
+            ).status_code
+            == 403
+        )
+    assert not fake_engine.instances
+
+
+@pytest.mark.parametrize(
+    "fen, result",
+    [
+        ("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", "0-1"),
+        ("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1", "1/2-1/2"),
+        ("7k/8/6K1/8/8/8/8/8 w - - 0 1", "1/2-1/2"),
+    ],
+)
+def test_terminal_position_never_allocates_engine(web_client, fake_engine, fen, result):
+    response = web_client.post(
+        "/api/position/", {"fen": fen}, content_type="application/json"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["evaluation"]["terminal_result"] == result
+    assert data["best_move_uci"] is None
+    assert data["best_move_san"] is None
+    assert not fake_engine.instances
+
+
+def test_chess960_position_best_castling(web_client, fake_engine, monkeypatch):
+    def evaluate(self, fen, *, chess960=False):
+        assert chess960
+        return PositionEvaluation(cp=25, best_move_uci="c1f1")
+
+    monkeypatch.setattr(fake_engine, "evaluate", evaluate)
+    response = web_client.post(
+        "/api/position/",
+        {"fen": "4k3/8/8/8/8/8/8/R1K2R2 w KQ - 0 1", "chess960": True},
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    assert response.json()["best_move_san"] == "O-O"
+    assert response.json()["best_move_uci"] == "c1f1"
+    assert fake_engine.instances[0].closed
+
+
+@pytest.mark.parametrize(
+    "fen, uci, san",
+    [
+        ("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1", "e1g1", "O-O"),
+        ("7k/P7/8/8/8/8/8/7K w - - 0 1", "a7a8n", "a8=N"),
+        ("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2", "e5d6", "exd6"),
+    ],
+)
+def test_position_best_special_moves(
+    web_client, fake_engine, monkeypatch, fen, uci, san
+):
+    def evaluate(self, fen, *, chess960=False):
+        return PositionEvaluation(cp=25, best_move_uci=uci)
+
+    monkeypatch.setattr(fake_engine, "evaluate", evaluate)
+    response = web_client.post(
+        "/api/position/", {"fen": fen}, content_type="application/json"
+    )
+    assert response.status_code == 200
+    assert response.json()["best_move_uci"] == uci
+    assert response.json()["best_move_san"] == san
+    assert fake_engine.instances[0].closed
+
+
+@pytest.mark.parametrize("error", [StockfishEngineError, ConfigurationError])
+def test_position_failure_is_safe_and_releases_slot(
+    web_client, fake_engine, monkeypatch, error
+):
+    def fail(self, fen, *, chess960=False):
+        raise error("sensitive server details")
+
+    monkeypatch.setattr(fake_engine, "evaluate", fail)
+    response = web_client.post(
+        "/api/position/", {"fen": chess.STARTING_FEN}, content_type="application/json"
+    )
+    assert response.status_code == 503
+    assert b"sensitive" not in response.content
+    assert fake_engine.instances[0].closed
+    assert views._analysis_slot.acquire(blocking=False)
+    views._analysis_slot.release()
+
+
+def test_position_shares_game_analysis_slot(web_client, fake_engine):
+    assert views._analysis_slot.acquire(blocking=False)
+    try:
+        response = web_client.post(
+            "/api/position/",
+            {"fen": chess.STARTING_FEN},
+            content_type="application/json",
+        )
+        assert response.status_code == 429
+        assert response["Retry-After"] == "5"
+        assert not fake_engine.instances
+    finally:
+        views._analysis_slot.release()
+
+
 @pytest.mark.integration
 def test_real_engine_web_payload(monkeypatch):
     monkeypatch.setenv("STOCKFISH_DEPTH", "2")
@@ -257,3 +420,16 @@ def test_real_engine_web_payload(monkeypatch):
     for move in result["moves"]:
         board = chess.Board(move["fen_before"])
         assert chess.Move.from_uci(move["best_move_uci"]) in board.legal_moves
+
+
+@pytest.mark.integration
+def test_real_engine_variation_position(monkeypatch):
+    monkeypatch.setenv("STOCKFISH_DEPTH", "2")
+    monkeypatch.setenv("STOCKFISH_TIME_SECONDS", "0.02")
+    board = chess.Board()
+    board.push_san("d4")
+    result = services.analyze_position(board.fen())
+    best = chess.Move.from_uci(result["best_move_uci"])
+    assert best in board.legal_moves
+    assert result["best_move_san"] == board.san(best)
+    assert result["evaluation"]["cp"] is not None

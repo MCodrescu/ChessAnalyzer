@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="{% static 'review/review.css' %}">
   <script type="module" src="{% static 'review/review.js' %}"></script>
 </head>
-<body>
+<body data-position-url="{% url 'position-analysis' %}">
   <header class="site-header">
     <a class="brand" href="{% url 'review' %}"><span aria-hidden="true">♞</span> ChessAnalyzer<span class="brand-tag">REVIEW</span></a>
     <div class="header-actions"><span class="local-badge"><span></span> Local Stockfish</span><button type="button" id="load-game" class="primary" aria-haspopup="dialog" aria-controls="import-dialog">Load game</button></div>
@@ -20,7 +20,10 @@
     <section class="workspace" aria-label="Game analysis workspace">
       <div class="board-column">
         <div class="player-card"><span class="avatar">♚</span><div><strong id="black-player">Black</strong><span id="game-event">Choose a game to get started</span></div><span class="color-dot black"></span></div>
-        <div class="board-shell"><div id="board" class="cg-wrap" role="group" aria-label="Interactive chessboard, starting position"></div></div>
+        <div class="board-shell">
+          <div id="board" class="cg-wrap" role="group" aria-label="Interactive chessboard, starting position"></div>
+          <p id="game-over" role="status" aria-live="polite" hidden></p>
+        </div>
         <div class="player-card"><span class="avatar light">♔</span><div><strong id="white-player">White</strong><span id="game-result">Standard chess</span></div><span class="color-dot white"></span></div>
         <div class="board-toolbar">
           <div class="navigation" role="group" aria-label="Move navigation">
@@ -67,7 +70,7 @@
           <p id="position-label" class="muted">Select a move after analyzing a game.</p>
           <div class="comparison-cards">
             <div><span class="small-label">YOU PLAYED</span><strong id="played-move">—</strong></div>
-            <div class="best-card"><span class="small-label">ENGINE BEST</span><strong id="best-move">—</strong></div>
+            <div class="best-card"><span class="small-label">ENGINE BEST · SHOWN POSITION</span><strong id="best-move" aria-live="polite">—</strong></div>
           </div>
           <div class="metrics"><span>Evaluation <strong id="evaluation">—</strong></span><span>Estimated loss <strong id="cp-loss">—</strong></span></div>
           <div class="preview-tabs" role="group" aria-label="Board position preview">
@@ -76,6 +79,8 @@
             <button data-preview="best" aria-pressed="false" disabled>Best line</button>
           </div>
           <p id="preview-note" class="muted">Click or drag pieces to try legal moves, or load a game to review.</p>
+          <p id="position-search-status" class="muted" role="status" aria-live="polite"></p>
+          <button id="retry-position" type="button" class="secondary" hidden>Retry engine search</button>
         </section>
         <section class="panel moves-panel">
           <div class="panel-heading"><h2>Game moves</h2><span id="analysis-settings" class="small-label">NOT ANALYZED</span></div>

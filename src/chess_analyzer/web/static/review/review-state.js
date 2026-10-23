@@ -6,6 +6,13 @@ export function formatEvaluation(evaluation) {
   return `${evaluation.cp >= 0 ? '+' : ''}${(evaluation.cp / 100).toFixed(2)}`;
 }
 
+export function formatGameResult(result) {
+  if (result === '1-0') return 'White wins (1-0)';
+  if (result === '0-1') return 'Black wins (0-1)';
+  if (result === '1/2-1/2') return 'Draw (1/2-1/2)';
+  return null;
+}
+
 export function moveSquares(uci) {
   return [uci.slice(0, 2), uci.slice(2, 4)];
 }

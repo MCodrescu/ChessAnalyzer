@@ -45,8 +45,17 @@ is no separate load/import step or manual PGN form. **Use example game** selects
 a built-in sample without needing a Chess.com lookup. The modal closes after successful
 analysis. Escape or the close button dismisses it without losing the current
 review or game selection. Selecting a game never starts analysis by itself.
-Left/right arrows navigate moves;
-Home/End jump to the first/last move. Imported games open with the searched
+Left/right arrows navigate every actual game position, including the position
+after the final move. **First**/**Home** return to the starting position;
+**Last**/**End** show the final played position. **Previous**/**Left** from the
+end return to the position before the final move. Clicking a move still opens
+its **Before move** comparison, with **Next** available to play the last move.
+At the final position, a **Game over** banner names the winner or draw and shows
+the recorded result, including games decided off the board. If the record has
+no result, it says **End of recorded game · Result unknown** instead of inferring
+a winner from the engine evaluation. The banner disappears when navigating back
+or exploring a new variation; terminal variations show their own result.
+Imported games open with the searched
 Chess.com player's color at the bottom (username matching is case-insensitive).
 The player cards follow the board orientation. **Flip** switches sides manually;
 loading another analysis restores that game's player perspective. The example
@@ -57,8 +66,14 @@ for either side from the displayed position (even before loading a game).
 Castling, en passant, and a promotion-piece chooser are supported. **Undo** takes
 back one trial move; **Reset** returns to the reviewed position. Selecting a game
 move, preview tab, or graph position also discards the trial line. Trial moves
-never change the imported game, accuracy, or graph; their evaluation is marked
-**Not searched**, because they are not sent to Stockfish.
+never change the imported game, accuracy, or graph. Each displayed trial position
+is searched by local Stockfish: **Engine best** and the green arrow show its
+recommended next move, with a White-relative evaluation. While exploring, the
+surrounding game review is grayed out; the board and move insights remain clear
+and interactive. **Searching…** indicates a pending search; failures are shown
+with a **Retry engine search** button rather than a stale recommendation.
+Rapid navigation discards outdated results and serializes position searches.
+FEN-based searches do not include repetition history.
 
 Chess960 games use their PGN variant and starting FEN; no manual mode switch is
 needed. Legal interactive moves use Chessops locally in the browser. To castle
@@ -156,10 +171,12 @@ not contact Chess.com directly and never requests a password.
 
 - **Before move** shows both choices from the same position: green for the
   engine best move, blue for the played move (one green arrow when they match).
-- **Played line** shows the actual resulting position and its evaluation.
+- **Played line** shows the actual resulting position and searches its next
+  best move, rather than showing the recommendation for the preceding position.
 - **Best line** previews the position after the recommendation, including
-  castling and promotion. This is a one-move preview, not a searched principal
-  variation; its resulting evaluation is deliberately not inferred.
+  castling and promotion. It enters the grayed variation mode and searches the
+  resulting position for its evaluation and next best move. Play on the board
+  to continue the variation, or use **Reset** to return to **Before move**.
 - Evaluations favor White when positive. Loss is in centipawns from the moving
   player's perspective; mate transitions have no numeric CP loss. Depth/time
   displayed are requested search caps, not achieved depth.
@@ -170,6 +187,11 @@ limited to 100,000 characters / 600 half-moves and one running analysis per web
 process; overlapping requests get HTTP 429. Engine resources come exclusively
 from the server's `STOCKFISH_*` environment, not browser input. The web app does
 not automatically load dotenv files; export environment values before starting.
+`POST /api/position/` accepts a JSON `fen` (up to 200 characters) and an optional
+boolean `chess960`, returning `fen`, `evaluation`, `best_move_uci`, and
+`best_move_san`. Terminal positions return null best moves without starting an
+engine. It requires CSRF protection and shares the game-analysis concurrency
+limit and server-configured engine budgets.
 
 For Codespaces/proxies, set `DJANGO_ALLOWED_HOSTS` to a comma-separated list of
 trusted hostnames, and `DJANGO_CSRF_TRUSTED_ORIGINS` to comma-separated HTTPS

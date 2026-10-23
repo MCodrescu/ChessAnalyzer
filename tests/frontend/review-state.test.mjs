@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatEvaluation, moveSquares, positionFor } from '../../src/chess_analyzer/web/static/review/review-state.js';
+import { formatEvaluation, formatGameResult, moveSquares, positionFor } from '../../src/chess_analyzer/web/static/review/review-state.js';
 
 const move = {
   fen_before: 'before', fen_after: 'after', best_fen: 'best',
@@ -15,6 +15,15 @@ test('score formatting preserves White-relative CP, signed mate, and results', (
   assert.equal(formatEvaluation({ cp: null, mate: 2 }), 'M+2');
   assert.equal(formatEvaluation({ mate: 0, terminal_result: '0-1' }), '0-1');
   assert.equal(formatEvaluation(null), '—');
+});
+
+test('game results name the winner or draw without inferring an unfinished result', () => {
+  assert.equal(formatGameResult('1-0'), 'White wins (1-0)');
+  assert.equal(formatGameResult('0-1'), 'Black wins (0-1)');
+  assert.equal(formatGameResult('1/2-1/2'), 'Draw (1/2-1/2)');
+  for (const result of ['*', '', undefined, null, 'invalid']) {
+    assert.equal(formatGameResult(result), null);
+  }
 });
 
 test('comparison arrows share the before-move position', () => {

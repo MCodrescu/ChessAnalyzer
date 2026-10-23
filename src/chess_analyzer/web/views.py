@@ -1,6 +1,7 @@
 """CSRF-protected local analysis HTTP endpoints."""
 
 import json
+from collections.abc import Callable
 from threading import BoundedSemaphore
 
 from django.core.exceptions import RequestDataTooBig
@@ -12,7 +13,11 @@ from django.views.decorators.http import require_GET, require_POST
 from chess_analyzer.config import ConfigurationError
 from chess_analyzer.models import InvalidPGNError, StockfishEngineError
 from chess_analyzer.web.chesscom import ChessComLookupError, list_archives, list_games
-from chess_analyzer.web.services import analyze_pgn
+from chess_analyzer.web.services import (
+    InvalidPositionError,
+    analyze_pgn,
+    analyze_position,
+)
 
 # One CPU-intensive job per web process. Multi-worker deployments need a queue
 # with a global concurrency limit, not additional unconstrained web workers.
@@ -67,6 +72,30 @@ def analyze(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Invalid JSON request."}, status=400)
     if not isinstance(data, dict) or not isinstance(data.get("pgn"), str):
         return JsonResponse({"error": "Provide a PGN string."}, status=400)
+    return _analysis_response(lambda: analyze_pgn(data["pgn"]))
+
+
+@never_cache
+@require_POST
+def position_analysis(request: HttpRequest) -> JsonResponse:
+    """Search a variation position using the same bounded local engine slot."""
+    if request.content_type != "application/json":
+        return JsonResponse({"error": "Send a JSON object containing fen."}, status=415)
+    try:
+        data = json.loads(request.body)
+    except RequestDataTooBig:
+        return JsonResponse({"error": "The position request is too large."}, status=413)
+    except (ValueError, UnicodeError):
+        return JsonResponse({"error": "Invalid JSON request."}, status=400)
+    if not isinstance(data, dict) or not isinstance(data.get("fen"), str):
+        return JsonResponse({"error": "Provide a FEN string."}, status=400)
+    return _analysis_response(
+        lambda: analyze_position(data["fen"], chess960=data.get("chess960", False))
+    )
+
+
+def _analysis_response(analyze_input: Callable[[], dict]) -> JsonResponse:
+    """Share resource limits and safe error responses across engine endpoints."""
     if not _analysis_slot.acquire(blocking=False):
         response = JsonResponse(
             {"error": "An analysis is already running. Please try again shortly."},
@@ -75,8 +104,8 @@ def analyze(request: HttpRequest) -> JsonResponse:
         response["Retry-After"] = "5"
         return response
     try:
-        return JsonResponse(analyze_pgn(data["pgn"]))
-    except InvalidPGNError as error:
+        return JsonResponse(analyze_input())
+    except (InvalidPGNError, InvalidPositionError) as error:
         return JsonResponse({"error": str(error)}, status=400)
     except ConfigurationError:
         return JsonResponse(
