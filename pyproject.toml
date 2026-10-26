@@ -14,10 +14,12 @@ dependencies = [
     "python-chess>=1.999,<2",
     "python-dotenv>=1.0,<2",
     "requests>=2.32,<3",
+    "whitenoise>=6.9,<7",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+web = ["gunicorn>=23,<24"]
 notebook = ["ipykernel>=6,<8"]
 
 [tool.setuptools.packages.find]

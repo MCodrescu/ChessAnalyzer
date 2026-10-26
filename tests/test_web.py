@@ -1,11 +1,16 @@
 """Offline Django and adapter tests; no database or live engine required."""
 
+import base64
 import json
 import os
+import runpy
+from pathlib import Path
 
 import chess
 import django
 import pytest
+from django.core.exceptions import ImproperlyConfigured
+from django.core.management import call_command
 from django.test import Client, override_settings
 
 from chess_analyzer.config import ConfigurationError
@@ -61,6 +66,141 @@ def test_review_page(web_client):
     assert 'data-preview="best"' in content
     assert "/static/review/vendor/" in content
     assert "csrftoken" in response.cookies
+
+
+def test_health_check_without_https_or_engine(web_client, fake_engine):
+    with override_settings(SECURE_SSL_REDIRECT=True):
+        response = web_client.get("/healthz/")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert response["Cache-Control"] == "no-store"
+    assert not fake_engine.instances
+
+
+def test_production_static_files_are_public(web_client, tmp_path):
+    with override_settings(
+        DEBUG=False,
+        STATIC_ROOT=tmp_path,
+        WHITENOISE_AUTOREFRESH=False,
+        BASIC_AUTH_USERNAME="reviewer",
+        BASIC_AUTH_PASSWORD="test-only-password",
+    ):
+        call_command("collectstatic", interactive=False, verbosity=0)
+        for asset in ("review.css", "review.js"):
+            response = web_client.get(f"/static/review/{asset}")
+            assert response.status_code == 200
+            assert response.streaming
+            response.close()
+
+
+def test_production_proxy_settings(monkeypatch):
+    monkeypatch.setenv("DJANGO_DEBUG", "0")
+    monkeypatch.setenv("DJANGO_SECRET_KEY", "test-only-production-settings-key")
+    monkeypatch.setenv("DJANGO_BASIC_AUTH_USERNAME", "reviewer")
+    monkeypatch.setenv("DJANGO_BASIC_AUTH_PASSWORD", "test-only-password")
+    monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", " example.com, , www.example.com ")
+    monkeypatch.setenv("DJANGO_TRUST_PROXY", "1")
+    settings = runpy.run_path(str(Path(views.__file__).with_name("settings.py")))
+    assert settings["DEBUG"] is False
+    assert settings["ALLOWED_HOSTS"] == ["example.com", "www.example.com"]
+    assert settings["SECURE_PROXY_SSL_HEADER"] == ("HTTP_X_FORWARDED_PROTO", "https")
+    assert settings["SECURE_SSL_REDIRECT"] is True
+    assert settings["CSRF_COOKIE_SECURE"] is True
+
+
+def test_proxy_headers_are_not_trusted_by_default(monkeypatch):
+    monkeypatch.delenv("DJANGO_TRUST_PROXY", raising=False)
+    settings = runpy.run_path(str(Path(views.__file__).with_name("settings.py")))
+    assert "SECURE_PROXY_SSL_HEADER" not in settings
+
+
+def test_gunicorn_configuration_bounds_processes(monkeypatch):
+    monkeypatch.setenv("PORT", "9090")
+    configuration = runpy.run_path(
+        str(Path(__file__).resolve().parents[1] / "gunicorn.conf.py")
+    )
+    assert configuration["bind"] == "0.0.0.0:9090"
+    assert configuration["workers"] == 1
+    assert configuration["worker_class"] == "gthread"
+    assert configuration["threads"] >= 2
+    assert configuration["worker_tmp_dir"] == "/dev/shm"
+
+
+def test_proxy_https_does_not_redirect(web_client):
+    with override_settings(
+        SECURE_SSL_REDIRECT=True,
+        SECURE_PROXY_SSL_HEADER=("HTTP_X_FORWARDED_PROTO", "https"),
+    ):
+        assert web_client.get("/", HTTP_X_FORWARDED_PROTO="https").status_code == 200
+        assert web_client.get("/").status_code == 301
+
+
+@pytest.mark.parametrize("missing", ["USERNAME", "PASSWORD"])
+def test_production_requires_private_access(monkeypatch, missing):
+    monkeypatch.setenv("DJANGO_DEBUG", "0")
+    monkeypatch.setenv("DJANGO_SECRET_KEY", "test-only-key")
+    monkeypatch.setenv("DJANGO_BASIC_AUTH_USERNAME", "reviewer")
+    monkeypatch.setenv("DJANGO_BASIC_AUTH_PASSWORD", "test-only-password")
+    monkeypatch.delenv(f"DJANGO_BASIC_AUTH_{missing}")
+    with pytest.raises(ImproperlyConfigured, match="private production access"):
+        runpy.run_path(str(Path(views.__file__).with_name("settings.py")))
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        "",
+        "Bearer token",
+        "Basic !!!",
+        "Basic /w==",
+        "Basic bm9jb2xvbg==",
+        "Basic d3Jvbmc6d3Jvbmc=",
+        "Basic cmV2aWV3ZXI6d3Jvbmc=",
+    ],
+)
+def test_private_access_rejects_invalid_credentials(
+    web_client, fake_engine, authorization
+):
+    with override_settings(
+        BASIC_AUTH_USERNAME="reviewer", BASIC_AUTH_PASSWORD="test-only-password"
+    ):
+        for path in ("/", "/api/analyze/", "/api/position/", "/api/chesscom/games/"):
+            response = web_client.get(path, HTTP_AUTHORIZATION=authorization)
+            assert response.status_code == 401
+            assert response["WWW-Authenticate"].startswith("Basic ")
+            assert response["Cache-Control"] == "private, no-store"
+        assert web_client.get("/healthz/").status_code == 200
+    assert not fake_engine.instances
+
+
+def test_private_access_preserves_csrf():
+    authorization = "Basic " + base64.b64encode(b"reviewer:test-only-password").decode(
+        "ascii"
+    )
+    with override_settings(
+        ALLOWED_HOSTS=["testserver"],
+        BASIC_AUTH_USERNAME="reviewer",
+        BASIC_AUTH_PASSWORD="test-only-password",
+    ):
+        client = Client(enforce_csrf_checks=True, HTTP_AUTHORIZATION=authorization)
+        response = client.get("/")
+        assert response.status_code == 200
+        assert response["Cache-Control"] == "private, no-store"
+        assert (
+            client.post(
+                "/api/analyze/", {"pgn": "*"}, content_type="application/json"
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                "/api/analyze/",
+                {"pgn": "*"},
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
+            ).status_code
+            == 200
+        )
 
 
 def test_analysis_roundtrip(web_client, fake_engine):

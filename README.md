@@ -197,13 +197,15 @@ For Codespaces/proxies, set `DJANGO_ALLOWED_HOSTS` to a comma-separated list of
 trusted hostnames, and `DJANGO_CSRF_TRUSTED_ORIGINS` to comma-separated HTTPS
 origins when needed. Do not use wildcard hosts or disable CSRF protection.
 For deployment set `DJANGO_DEBUG=0`, a strong `DJANGO_SECRET_KEY`, and explicit
-hosts/origins; serve collected static files over HTTPS with a production server.
-The existing Dockerfile still runs the CLI, not Django. Do not expose this
-unauthenticated CPU-intensive endpoint publicly: add authentication, rate limits,
-and a background queue with globally bounded engine concurrency first. A web
-worker semaphore is not a cross-process job scheduler. Proxy/worker timeouts
-must accommodate complete analyses; cancelling a browser request does not stop
-an in-progress engine search.
+hosts/origins. Production also requires `DJANGO_BASIC_AUTH_USERNAME` and
+`DJANGO_BASIC_AUTH_PASSWORD`; the browser prompts for these shared credentials.
+The Dockerfile now serves Django with Gunicorn and collected static files via
+WhiteNoise. See [DigitalOcean App Platform](#digitalocean-app-platform) below.
+This is a private-use deployment, not a public analysis service. Public access
+still needs per-user authentication, rate limits, and a background queue with
+globally bounded engine concurrency. A web worker semaphore is not a cross-process
+job scheduler. Cancelling a browser request does not stop an in-progress engine
+search.
 
 Chessground is **GPL-3.0-or-later**, not permissively licensed. Review
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and upstream requirements before
@@ -249,6 +251,97 @@ python -m chess_analyzer --env-file .env game.pgn
 
 Use `--env-file` only for an explicit local configuration file. Existing process
 environment values take precedence (including blank values selecting defaults).
+
+## DigitalOcean App Platform
+
+The default Docker build is a **web service**: Node builds the local board assets
+in a separate stage, Debian installs Stockfish, and the final Python image runs
+as an unprivileged user. No Node runtime, database, migrations, volume, or separate
+static-site component is required. `collectstatic` runs during the build without
+production secrets. Runtime secrets must not be passed as Docker build arguments.
+
+### Create the app
+
+1. Push this code to a GitHub repository accessible to your DigitalOcean account.
+2. Use [.do/app.yaml](.do/app.yaml) as the App Platform specification template.
+  Replace `YOUR_GITHUB_OWNER/YOUR_REPOSITORY` and adjust the branch and region.
+  Alternatively, connect the repository in **Create App**, select the root
+  Dockerfile, and copy the service settings and runtime variables from the spec.
+3. Use a **web service** on port **8080**, initially **one instance with 1 GiB RAM**.
+  Leave build/run command overrides empty so Docker's build and CMD are used.
+  The plan in the template is paid; review current pricing before creating it.
+4. Before deploying, replace the two blank secret variables in the control panel:
+  `DJANGO_SECRET_KEY` with a unique random secret of at least 50 characters, and
+  `DJANGO_BASIC_AUTH_PASSWORD` with a separate high-entropy password. Mark both
+  **encrypted**, with **runtime** scope. Choose `DJANGO_BASIC_AUTH_USERNAME`
+  (default `reviewer`, without a colon). Never commit plaintext secrets to the spec.
+  Blank secrets intentionally prevent the production process from starting.
+5. Keep `DJANGO_ALLOWED_HOSTS=${APP_DOMAIN}` and
+  `DJANGO_CSRF_TRUSTED_ORIGINS=${APP_URL}` as runtime bindable variables. DigitalOcean
+  resolves them to the app's primary domain and HTTPS origin. For additional
+  domains, append their exact hostnames/origins as comma-separated values; no `*`.
+6. Keep `DJANGO_TRUST_PROXY=1` only behind App Platform's trusted ingress, which
+  terminates TLS and sets `X-Forwarded-Proto`. Direct public access to the container
+  must not be enabled. Production redirects HTTP to HTTPS and uses secure cookies.
+7. Deploy, open the generated HTTPS URL, and enter the shared credentials in the
+  browser prompt. Use the example game first, then try the Chess.com game picker.
+
+The spec uses a **TCP** readiness check (no `http_path`), avoiding dependence on
+the platform probe's Host header and credentials. `GET /healthz/` is also available
+without authentication for an HTTP smoke check, returning `{"status":"ok"}`;
+it does not test Stockfish or Chess.com. Test the installed engine from the app's
+Console with `python -m chess_analyzer --check-engine` after deployment.
+
+### Resource and security limits
+
+Gunicorn runs one process with four threads: one engine job can run while other
+threads handle health checks or return HTTP 429 for overlapping analysis requests.
+Do not increase workers, enable autoscaling, or add instances without designing
+global engine admission control. The template uses one engine thread, 64 MiB hash,
+and a 0.1-second per-position search budget (rather than the local 0.2-second
+default). Long games can still exceed ingress/client timeouts; reduce the search
+budget or move analysis to queued jobs if that happens. Gunicorn's worker timeout
+is a liveness setting, not a hard per-request deadline.
+
+Django's `check --deploy` reports two intentional HSTS warnings: subdomain coverage
+and preload are not enabled. Enable those only after confirming that every
+subdomain you control supports HTTPS and deciding to join the browser preload list.
+
+Shared Basic authentication is intended for you and trusted users over HTTPS.
+It has no user accounts, logout flow, or brute-force rate limiter. Rotate a leaked
+password immediately. Static assets and the minimal health response are public;
+application responses use `private, no-store`. CSRF protection stays enabled.
+PGNs/results are not persisted. In-memory caches reset on deployment. Review the
+GPL and source-availability obligations in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before deployment/distribution.
+
+### Local container smoke test
+
+With Docker running, build and start the Linux web image from the repository root:
+
+```bash
+docker build -t chess-analyzer-web .
+docker run --rm -p 8080:8080 --env-file .env.production chess-analyzer-web
+```
+
+Create the ignored local `.env.production` with `DJANGO_DEBUG=0`, production-style
+secret and Basic credentials, `DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1`, and
+`DJANGO_CSRF_TRUSTED_ORIGINS=https://localhost`. Use an HTTPS reverse proxy for a
+complete local production smoke test. A direct HTTP request to `/` should redirect;
+`http://localhost:8080/healthz/` should return 200. Do not disable HTTPS for deployment.
+
+After deployment, check `/healthz/` (200), `/` without credentials (401), `/` with
+credentials (200), local board assets (200), example-game analysis, and Chess.com
+lookup. HTTP 400 usually means an incorrect allowed host; CSRF 403 usually means
+an incorrect HTTPS origin or proxy setting. Engine 503 means the engine/config
+needs checking. HTTP 429 is expected when another analysis is running.
+
+The CLI image remains available as an explicit build target:
+
+```bash
+docker build --target cli -t chess-analyzer-cli .
+docker run --rm chess-analyzer-cli --check-engine
+```
 
 ### Search speed and resources
 
