@@ -197,15 +197,13 @@ For Codespaces/proxies, set `DJANGO_ALLOWED_HOSTS` to a comma-separated list of
 trusted hostnames, and `DJANGO_CSRF_TRUSTED_ORIGINS` to comma-separated HTTPS
 origins when needed. Do not use wildcard hosts or disable CSRF protection.
 For deployment set `DJANGO_DEBUG=0`, a strong `DJANGO_SECRET_KEY`, and explicit
-hosts/origins. Production also requires `DJANGO_BASIC_AUTH_USERNAME` and
-`DJANGO_BASIC_AUTH_PASSWORD`; the browser prompts for these shared credentials.
+hosts/origins. The application is publicly accessible without authentication.
 The Dockerfile now serves Django with Gunicorn and collected static files via
 WhiteNoise. See [DigitalOcean App Platform](#digitalocean-app-platform) below.
-This is a private-use deployment, not a public analysis service. Public access
-still needs per-user authentication, rate limits, and a background queue with
-globally bounded engine concurrency. A web worker semaphore is not a cross-process
-job scheduler. Cancelling a browser request does not stop an in-progress engine
-search.
+Analysis is CPU-intensive: consider edge rate limits to reduce abuse and a background
+queue with globally bounded engine concurrency before scaling to multiple workers
+or instances. A web worker semaphore is not a cross-process job scheduler.
+Cancelling a browser request does not stop an in-progress engine search.
 
 Chessground is **GPL-3.0-or-later**, not permissively licensed. Review
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and upstream requirements before
@@ -270,12 +268,11 @@ production secrets. Runtime secrets must not be passed as Docker build arguments
 3. Use a **web service** on port **8080**, initially **one instance with 1 GiB RAM**.
   Leave build/run command overrides empty so Docker's build and CMD are used.
   The plan in the template is paid; review current pricing before creating it.
-4. Before deploying, replace the two blank secret variables in the control panel:
-  `DJANGO_SECRET_KEY` with a unique random secret of at least 50 characters, and
-  `DJANGO_BASIC_AUTH_PASSWORD` with a separate high-entropy password. Mark both
-  **encrypted**, with **runtime** scope. Choose `DJANGO_BASIC_AUTH_USERNAME`
-  (default `reviewer`, without a colon). Never commit plaintext secrets to the spec.
-  Blank secrets intentionally prevent the production process from starting.
+4. Before deploying, set `DJANGO_SECRET_KEY` in the control panel to a unique random
+  secret of at least 50 characters. Mark it **encrypted**, with **runtime** scope.
+  Never commit the plaintext secret to the spec. A blank key intentionally prevents
+  the production process from starting. No login credentials are needed; remove
+  `DJANGO_BASIC_AUTH_USERNAME` and `DJANGO_BASIC_AUTH_PASSWORD` from older deployments.
 5. Keep `DJANGO_ALLOWED_HOSTS=${APP_DOMAIN}` and
   `DJANGO_CSRF_TRUSTED_ORIGINS=${APP_URL}` as runtime bindable variables. DigitalOcean
   resolves them to the app's primary domain and HTTPS origin. For additional
@@ -283,11 +280,11 @@ production secrets. Runtime secrets must not be passed as Docker build arguments
 6. Keep `DJANGO_TRUST_PROXY=1` only behind App Platform's trusted ingress, which
   terminates TLS and sets `X-Forwarded-Proto`. Direct public access to the container
   must not be enabled. Production redirects HTTP to HTTPS and uses secure cookies.
-7. Deploy, open the generated HTTPS URL, and enter the shared credentials in the
-  browser prompt. Use the example game first, then try the Chess.com game picker.
+7. Deploy and open the generated HTTPS URL; no login prompt is expected. Use the
+  example game first, then try the Chess.com game picker.
 
 The spec uses a **TCP** readiness check (no `http_path`), avoiding dependence on
-the platform probe's Host header and credentials. `GET /healthz/` is also available
+the platform probe's Host header. `GET /healthz/` is also available
 without authentication for an HTTP smoke check, returning `{"status":"ok"}`;
 it does not test Stockfish or Chess.com. Test the installed engine from the app's
 Console with `python -m chess_analyzer --check-engine` after deployment.
@@ -307,10 +304,11 @@ Django's `check --deploy` reports two intentional HSTS warnings: subdomain cover
 and preload are not enabled. Enable those only after confirming that every
 subdomain you control supports HTTPS and deciding to join the browser preload list.
 
-Shared Basic authentication is intended for you and trusted users over HTTPS.
-It has no user accounts, logout flow, or brute-force rate limiter. Rotate a leaked
-password immediately. Static assets and the minimal health response are public;
-application responses use `private, no-store`. CSRF protection stays enabled.
+The review page and analysis APIs are public, with no login or shared password.
+CSRF protection stays enabled, and analysis responses use `no-store`. There is no
+per-client rate limiter: the concurrency limit bounds simultaneous engine jobs,
+but it does not stop a visitor from making repeated requests or monopolizing the
+engine. Consider edge rate limits for public traffic and monitor CPU usage.
 PGNs/results are not persisted. In-memory caches reset on deployment. Review the
 GPL and source-availability obligations in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before deployment/distribution.
@@ -325,13 +323,13 @@ docker run --rm -p 8080:8080 --env-file .env.production chess-analyzer-web
 ```
 
 Create the ignored local `.env.production` with `DJANGO_DEBUG=0`, production-style
-secret and Basic credentials, `DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1`, and
+`DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1`, and
 `DJANGO_CSRF_TRUSTED_ORIGINS=https://localhost`. Use an HTTPS reverse proxy for a
 complete local production smoke test. A direct HTTP request to `/` should redirect;
 `http://localhost:8080/healthz/` should return 200. Do not disable HTTPS for deployment.
 
-After deployment, check `/healthz/` (200), `/` without credentials (401), `/` with
-credentials (200), local board assets (200), example-game analysis, and Chess.com
+After deployment, check `/healthz/` (200), `/` without credentials (200),
+local board assets (200), example-game analysis, and Chess.com
 lookup. HTTP 400 usually means an incorrect allowed host; CSRF 403 usually means
 an incorrect HTTPS origin or proxy setting. Engine 503 means the engine/config
 needs checking. HTTP 429 is expected when another analysis is running.

@@ -25,13 +25,6 @@ services:
         scope: RUN_TIME
         type: SECRET
         value: ""
-      - key: DJANGO_BASIC_AUTH_USERNAME
-        scope: RUN_TIME
-        value: reviewer
-      - key: DJANGO_BASIC_AUTH_PASSWORD
-        scope: RUN_TIME
-        type: SECRET
-        value: ""
       - key: DJANGO_ALLOWED_HOSTS
         scope: RUN_TIME
         value: ${APP_DOMAIN}

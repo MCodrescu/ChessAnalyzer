@@ -13,14 +13,6 @@ if not SECRET_KEY:
         raise ImproperlyConfigured("Set DJANGO_SECRET_KEY when DJANGO_DEBUG=0.")
     SECRET_KEY = "local-development-only-not-for-production"
 
-BASIC_AUTH_USERNAME = os.environ.get("DJANGO_BASIC_AUTH_USERNAME", "")
-BASIC_AUTH_PASSWORD = os.environ.get("DJANGO_BASIC_AUTH_PASSWORD", "")
-if not DEBUG and (not BASIC_AUTH_USERNAME or not BASIC_AUTH_PASSWORD):
-    raise ImproperlyConfigured(
-        "Set DJANGO_BASIC_AUTH_USERNAME and DJANGO_BASIC_AUTH_PASSWORD "
-        "for private production access."
-    )
-
 ALLOWED_HOSTS = os.environ.get(
     "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]"
 ).split(",")
@@ -37,7 +29,6 @@ INSTALLED_APPS = ["django.contrib.staticfiles", "chess_analyzer.web"]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    "chess_analyzer.web.middleware.PrivateAccessMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
