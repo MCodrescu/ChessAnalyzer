@@ -1,5 +1,7 @@
 # ChessAnalyzer
 
+**Try the live app at [chessanalyzer.site](https://chessanalyzer.site/).**
+
 Turn your finished games into something you can learn from. ChessAnalyzer lets
 you review your Chess.com games with Stockfish, compare your decisions with the
 engine's suggestions, and play out the alternatives on an interactive board.
