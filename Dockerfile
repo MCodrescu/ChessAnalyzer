@@ -25,7 +25,9 @@ COPY src/ ./src/
 COPY --from=frontend /build/src/chess_analyzer/web/static/review/vendor/ ./src/chess_analyzer/web/static/review/vendor/
 RUN pip install --no-cache-dir '.[web]' \
     && DJANGO_DEBUG=1 python manage.py collectstatic --noinput \
-    && useradd --create-home --uid 10001 analyzer
+    && useradd --create-home --uid 10001 analyzer \
+    && mkdir -p /app/data \
+    && chown analyzer:analyzer /app/data
 USER analyzer
 
 FROM runtime AS cli
@@ -68,11 +70,9 @@ FROM rating-runtime AS rating-worker
 CMD ["python", "manage.py", "rating_worker"]
 
 FROM rating-runtime AS rating-web
+COPY supervisord.conf /app/supervisord.conf
 ENV DJANGO_DEBUG=0
 EXPOSE 8080
-CMD ["gunicorn", "--config", "gunicorn.conf.py", "chess_analyzer.web.wsgi:application"]
+CMD ["supervisord", "--configuration", "/app/supervisord.conf"]
 
-FROM runtime AS web
-ENV DJANGO_DEBUG=0
-EXPOSE 8080
-CMD ["gunicorn", "--config", "gunicorn.conf.py", "chess_analyzer.web.wsgi:application"]
+FROM rating-web AS web

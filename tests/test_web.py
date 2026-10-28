@@ -3,6 +3,8 @@
 import json
 import os
 import runpy
+import sqlite3
+from configparser import ConfigParser
 from pathlib import Path
 
 import chess
@@ -118,6 +120,32 @@ def test_rating_unconfigured(web_client):
             ).status_code
             == 503
         )
+
+
+@pytest.mark.parametrize("failure", [PermissionError, sqlite3.OperationalError])
+def test_rating_storage_failure_returns_safe_json(web_client, monkeypatch, failure):
+    """Storage failures must stay readable without exposing deployment paths."""
+    pgn = (
+        '[Result "1-0"]\n[TimeControl "300"]\n\n'
+        "1. e4 {[%clk 0:05:00]} e5 {[%clk 0:04:59]} 1-0"
+    )
+
+    def unavailable_store():
+        raise failure("private deployment path")
+
+    monkeypatch.setattr(views, "RatingJobStore", unavailable_store)
+    with override_settings(RATING_MODEL_DIRECTORY="model"):
+        responses = (
+            web_client.post(
+                "/api/ratings/", {"pgn": pgn}, content_type="application/json"
+            ),
+            web_client.get("/api/ratings/example/"),
+        )
+    for response in responses:
+        assert response.status_code == 503
+        assert "RATING_JOB_DATABASE" in response.json()["error"]
+        assert "private deployment path" not in response.json()["error"]
+        assert "no-store" in response["Cache-Control"]
 
 
 def test_rating_expiry_and_estimator_reuse(tmp_path):
@@ -269,6 +297,32 @@ def test_gunicorn_configuration_bounds_processes(monkeypatch):
     assert configuration["worker_class"] == "gthread"
     assert configuration["threads"] >= 2
     assert configuration["worker_tmp_dir"] == "/dev/shm"
+
+
+def test_default_container_starts_web_and_rating_worker():
+    """The default App Platform image must provision and start rating inference."""
+    root = Path(__file__).resolve().parents[1]
+    configuration = ConfigParser()
+    configuration.read(root / "supervisord.conf")
+    assert configuration.getboolean("supervisord", "nodaemon")
+    for program in ("program:web", "program:rating-worker"):
+        assert configuration[program]["directory"] == "/app"
+        assert configuration.getboolean(program, "autostart")
+        assert configuration.getboolean(program, "autorestart")
+        assert configuration.getboolean(program, "stopasgroup")
+        assert configuration.getboolean(program, "killasgroup")
+        assert configuration[program]["stdout_logfile_maxbytes"] == "0"
+    assert "gunicorn" in configuration["program:web"]["command"]
+    assert configuration["program:rating-worker"]["command"].endswith("rating_worker")
+    dockerfile = (root / "Dockerfile").read_text()
+    assert dockerfile.strip().endswith("FROM rating-web AS web")
+    assert "FROM rating-runtime AS rating-web" in dockerfile
+    assert (
+        'CMD ["supervisord", "--configuration", "/app/supervisord.conf"]' in dockerfile
+    )
+    assert "RATING_MODEL_DIRECTORY=/opt/rating-model" in dockerfile
+    assert "RATING_JOB_DATABASE=/app/data/rating-jobs.sqlite3" in dockerfile
+    assert "chown analyzer:analyzer /app/data" in dockerfile
 
 
 def test_proxy_https_does_not_redirect(web_client):

@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
-web = ["gunicorn>=23,<24"]
+web = ["gunicorn>=23,<24", "supervisor>=4.2.5,<5"]
 notebook = ["ipykernel>=6,<8"]
 rating = [
     "chess-rating-estimator[engine] @ git+https://github.com/MCodrescu/ELO-Estimator.git@e9867d40a996dee6a98ddbaf2a52bce0c2ab2078",

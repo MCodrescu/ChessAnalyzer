@@ -103,3 +103,22 @@ test('rating validation failures do not retry and transient failures can retry',
   assert.equal(element('retry-rating').hidden, false);
   assert.equal(element('rating-status').textContent, 'Unavailable');
 });
+
+test('rating HTML errors report the HTTP status instead of a generic retrieval failure', async (context) => {
+  const element = ratingDOM(context);
+  let status = 500;
+  context.mock.method(globalThis, 'fetch', async () => new Response('<html>Private server error</html>', {
+    status, headers: { 'Content-Type': 'text/html' },
+  }));
+  const ratings = new RatingSummary();
+  ratings.start('game');
+  await new Promise(setImmediate);
+  assert.match(element('rating-status').textContent, /HTTP 500/);
+  assert.doesNotMatch(element('rating-status').textContent, /Private server error/);
+  assert.equal(element('retry-rating').hidden, false);
+  status = 403;
+  ratings.start('game');
+  await new Promise(setImmediate);
+  assert.match(element('rating-status').textContent, /HTTP 403.*reload/i);
+  assert.equal(element('retry-rating').hidden, true);
+});

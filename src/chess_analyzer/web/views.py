@@ -1,6 +1,8 @@
 """CSRF-protected local analysis HTTP endpoints."""
 
 import json
+import logging
+import sqlite3
 from collections.abc import Callable
 from threading import BoundedSemaphore
 
@@ -25,6 +27,11 @@ from chess_analyzer.web.services import (
 # One CPU-intensive job per web process. Multi-worker deployments need a queue
 # with a global concurrency limit, not additional unconstrained web workers.
 _analysis_slot = BoundedSemaphore(1)
+logger = logging.getLogger(__name__)
+RATING_STORAGE_ERROR = (
+    "Performance rating storage is unavailable. "
+    "Check RATING_JOB_DATABASE and its directory permissions."
+)
 
 
 @require_GET
@@ -131,6 +138,9 @@ def rating_submit(request: HttpRequest) -> JsonResponse:
         response = JsonResponse({"error": str(error)}, status=429)
         response["Retry-After"] = "10"
         return response
+    except (OSError, sqlite3.Error):
+        logger.exception("Rating job storage failed during submission")
+        return JsonResponse({"error": RATING_STORAGE_ERROR}, status=503)
     return JsonResponse(job.model_dump(mode="json"), status=202)
 
 
@@ -150,7 +160,11 @@ def rating_status(request: HttpRequest, job_id: str) -> JsonResponse:
         return JsonResponse(
             {"error": "Performance ratings are not configured."}, status=503
         )
-    job = RatingJobStore().get(job_id)
+    try:
+        job = RatingJobStore().get(job_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("Rating job storage failed during status lookup")
+        return JsonResponse({"error": RATING_STORAGE_ERROR}, status=503)
     if job is None:
         return JsonResponse(
             {"error": "Rating job expired or was not found."}, status=404
