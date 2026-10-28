@@ -19,6 +19,9 @@ const payload = {
 
 test.beforeEach(async ({ page }, testInfo) => {
   if (testInfo.title === 'real Stockfish analysis works through the complete browser workflow') return;
+  await page.route('**/api/ratings/', (route) => route.fulfill({
+    status: 503, json: { error: 'Performance ratings are not configured.' },
+  }));
   await page.route('**/api/position/', async (route) => {
     expect(route.request().headers()['x-csrftoken']).toBeTruthy();
     const { fen, chess960 } = route.request().postDataJSON();
@@ -57,6 +60,40 @@ async function squarePoint(page, square) {
   return { x: (flipped ? 7 - file : file) * bounds.width / 8 + bounds.width / 16,
     y: (flipped ? rank : 7 - rank) * bounds.height / 8 + bounds.height / 16 };
 }
+
+test('performance ratings finish asynchronously without changing the review', async ({ page }, testInfo) => {
+  let polls = 0;
+  await page.route('**/api/ratings/', async (route) => {
+    expect(route.request().headers()['x-csrftoken']).toBeTruthy();
+    expect(route.request().postDataJSON().pgn).toContain('f3');
+    await route.fulfill({ status: 202, json: { id: 'rating-test', status: 'queued' } });
+  });
+  await page.route('**/api/ratings/rating-test/', (route) => route.fulfill({ json: ++polls === 1
+    ? { id: 'rating-test', status: 'running' }
+    : { id: 'rating-test', status: 'complete', result: { white: 1523.4, black: 1476.8, model_id: 'pinned-model' } },
+  }));
+  await loadReview(page);
+  await expect(page.locator('#rating-status')).toContainText('queued');
+  await page.getByRole('button', { name: 'Next move', exact: true }).click();
+  await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE4);
+  await expect(page.locator('#rating-status')).toContainText('Calculating');
+  await expect(page.locator('#white-rating')).toHaveText('1523', { timeout: 10000 });
+  await expect(page.locator('#black-rating')).toHaveText('1477');
+  await expect(page.locator('#white-rating')).toHaveAttribute('title', 'Model: pinned-model');
+  await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE4);
+  await page.screenshot({ path: `test-results/performance-rating-${testInfo.project.name}.png`, fullPage: true });
+});
+
+test('rating failure is retryable without reanalyzing the game', async ({ page }) => {
+  await loadReview(page);
+  await expect(page.locator('#rating-status')).toContainText('not configured');
+  await page.route('**/api/ratings/', (route) => route.fulfill({ json: {
+    id: 'retry', status: 'complete', result: { white: 1200, black: 1300, model_id: 'model' },
+  } }));
+  await page.getByRole('button', { name: 'Retry rating', exact: true }).click();
+  await expect(page.locator('#white-rating')).toHaveText('1200');
+  await expect(page.locator('#retry-rating')).toBeHidden();
+});
 
 async function clickMove(page, from, to) {
   await page.locator('#board').click({ position: await squarePoint(page, from) });

@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="{% static 'review/review.css' %}">
   <script type="module" src="{% static 'review/review.js' %}"></script>
 </head>
-<body data-position-url="{% url 'position-analysis' %}">
+<body data-position-url="{% url 'position-analysis' %}" data-rating-url="{% url 'rating-submit' %}">
   <header class="site-header">
     <a class="brand" href="{% url 'review' %}"><span aria-hidden="true">♞</span> ChessAnalyzer<span class="brand-tag">REVIEW</span></a>
     <div class="header-actions"><span class="local-badge"><span></span> Local Stockfish</span><button type="button" id="load-game" class="primary" aria-haspopup="dialog" aria-controls="import-dialog">Load game</button></div>
@@ -39,7 +39,7 @@
       </div>
       <aside class="review-column">
         <div class="review-status">
-          <p id="status" role="status" aria-live="polite">Analysis stays local. No games saved to disk.</p>
+          <p id="status" role="status" aria-live="polite">Local analysis. Rating jobs temporarily store the game.</p>
           <p id="error" role="alert" hidden></p>
         </div>
         <section class="panel summary-panel" aria-labelledby="summary-heading">
@@ -49,6 +49,13 @@
             <div><span class="accuracy-color"><span class="color-dot black"></span> Black</span><strong id="black-accuracy">—</strong><span id="black-accuracy-name">Black</span></div>
           </div>
           <p class="accuracy-note muted">Lichess calculation · Local Stockfish search · Scores may differ from lichess.org.</p>
+          <div class="panel-heading"><h2>Estimated performance rating</h2><span class="small-label" title="Single-game Chess.com rating estimate, not an official rating. Held-out mean absolute error: approximately 385 points; no calibrated confidence interval.">EXPERIMENTAL</span></div>
+          <div class="metrics performance-ratings" aria-label="Estimated performance ratings">
+            <span>White <strong id="white-rating">—</strong></span>
+            <span>Black <strong id="black-rating">—</strong></span>
+          </div>
+          <p id="rating-status" class="muted" role="status" aria-live="polite">No game rated.</p>
+          <button id="retry-rating" type="button" class="secondary" hidden>Retry rating</button>
           <div class="panel-heading graph-heading"><h2>Game evaluation</h2><span id="graph-readout" class="small-label">No analyzed moves</span></div>
           <div class="evaluation-chart">
             <svg id="evaluation-graph" viewBox="0 0 600 130" preserveAspectRatio="none" role="img" aria-label="Game evaluation graph. No analyzed moves.">
@@ -129,7 +136,7 @@
       <p id="selected-game" class="selection-summary muted" role="status" aria-live="polite">Choose a game above to enable analysis.</p>
       <div class="import-actions"><button type="button" id="demo" class="secondary">Use example game</button><button id="analyze-button" type="submit" class="primary" disabled>Analyze game</button></div>
     </form>
-    <p id="import-status" class="muted" role="status" aria-live="polite">Analysis stays local. No games saved to disk.</p>
+    <p id="import-status" class="muted" role="status" aria-live="polite">Local analysis. Rating jobs temporarily store the game.</p>
     <p id="import-error" class="lookup-error" role="alert" hidden></p>
   </dialog>
 </body>

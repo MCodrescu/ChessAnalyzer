@@ -1,5 +1,6 @@
 import { formatEvaluation, formatGameResult, moveSquares, positionFor } from './review-state.js';
 import { ReviewSummary } from './review-summary.js';
+import { RatingSummary } from './rating-summary.js';
 import { importDialog, setReviewStatus } from './import-dialog.js';
 import { selectedGamePGN, selectedGameOrientation, setAnalysisBusy, setBoardReady } from './chesscom-import.js';
 
@@ -17,6 +18,7 @@ let positionSearchVersion = 0;
 let positionSearchTimer;
 let positionSearchQueue = Promise.resolve();
 const summary = new ReviewSummary(selectMove);
+const ratings = new RatingSummary();
 
 function showGameOver(result, variation = false) {
   const outcome = formatGameResult(result);
@@ -330,6 +332,7 @@ $('analysis-form').addEventListener('submit', async (event) => {
     $('analysis-settings').textContent = `DEPTH ≤ ${data.analysis_depth} · ${data.analysis_time_seconds === null ? 'DEPTH ONLY' : `${data.analysis_time_seconds}s/POS`}`;
     renderMoveList();
     summary.render(data);
+    ratings.start(pgn);
     setOrientation(orientation);
     selectMove(0);
     setReviewStatus('Analysis complete. Click any move to compare the choices.');

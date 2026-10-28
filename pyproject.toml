@@ -13,6 +13,7 @@ dependencies = [
     "chess.com>=3.13,<4",
     "python-chess>=1.999,<2",
     "python-dotenv>=1.0,<2",
+    "pydantic>=2,<3",
     "requests>=2.32,<3",
     "whitenoise>=6.9,<7",
 ]
@@ -21,6 +22,10 @@ dependencies = [
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 web = ["gunicorn>=23,<24"]
 notebook = ["ipykernel>=6,<8"]
+rating = [
+    "chess-rating-estimator[engine] @ git+https://github.com/MCodrescu/ELO-Estimator.git@e9867d40a996dee6a98ddbaf2a52bce0c2ab2078",
+    "filelock>=3.16,<4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

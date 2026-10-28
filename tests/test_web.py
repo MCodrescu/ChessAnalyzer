@@ -23,6 +23,156 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "chess_analyzer.web.settings")
 django.setup()
 
 from chess_analyzer.web import services, views  # noqa: E402
+from chess_analyzer.web.rating import validate_rating_pgn  # noqa: E402
+from chess_analyzer.web.rating_jobs import (  # noqa: E402
+    RatingJobStore,
+    RatingResult,
+    RatingWorker,
+)
+
+
+def test_rating_eligibility():
+    pgn = (
+        '[Result "1-0"]\n[TimeControl "300"]\n\n'
+        "1. e4 {[%clk 0:05:00]} e5 {[%clk 0:04:59]} 1-0"
+    )
+    assert validate_rating_pgn(pgn) == "blitz"
+    for unsupported in (
+        pgn.replace('"300"', '"3600"'),
+        pgn.replace('"1-0"', '"*"').replace(" 1-0", " *"),
+        pgn.replace("{[%clk 0:05:00]}", ""),
+    ):
+        with pytest.raises(InvalidPGNError):
+            validate_rating_pgn(unsupported)
+
+
+def test_rating_job_roundtrip(web_client, tmp_path):
+    pgn = (
+        '[Result "1-0"]\n[TimeControl "300"]\n\n'
+        "1. e4 {[%clk 0:05:00]} e5 {[%clk 0:04:59]} 1-0"
+    )
+
+    class Estimator:
+        def predict_pgn(self, original):
+            assert original == pgn
+            return RatingResult(
+                white=1500,
+                black=1400,
+                model_id="test-model",
+                category="blitz",
+                engine_compatibility="exact",
+            )
+
+    with override_settings(
+        RATING_MODEL_DIRECTORY="model",
+        RATING_JOB_DATABASE=tmp_path / "jobs.sqlite3",
+        RATING_QUEUE_LIMIT=1,
+    ):
+        response = web_client.post(
+            "/api/ratings/", {"pgn": pgn}, content_type="application/json"
+        )
+        assert response.status_code == 202
+        job_id = response.json()["id"]
+        assert "pgn" not in response.json()
+        assert (
+            web_client.post(
+                "/api/ratings/", {"pgn": pgn}, content_type="application/json"
+            ).status_code
+            == 429
+        )
+        store = RatingJobStore()
+        worker = RatingWorker(store, Estimator)
+        assert worker.process_next()
+        assert not worker.process_next()
+        result = web_client.get(f"/api/ratings/{job_id}/").json()
+        assert result["status"] == "complete"
+        assert result["result"]["white"] == 1500
+        with store._connection() as connection:
+            assert (
+                connection.execute("SELECT pgn FROM rating_jobs").fetchone()[0] is None
+            )
+        assert web_client.get("/api/ratings/unknown/").status_code == 404
+
+
+def test_rating_worker_failure_and_recovery(tmp_path):
+    def fail():
+        raise ValueError("private engine path")
+
+    with override_settings(RATING_JOB_DATABASE=tmp_path / "jobs.sqlite3"):
+        store = RatingJobStore()
+        job = store.submit("example")
+        assert RatingWorker(store, fail).process_next()
+        assert store.get(job.id).status == "failed"
+        assert "private engine path" not in store.get(job.id).error
+        interrupted = store.submit("example")
+        store.claim()
+        store.recover()
+        assert store.get(interrupted.id).status == "failed"
+
+
+def test_rating_unconfigured(web_client):
+    with override_settings(RATING_MODEL_DIRECTORY=""):
+        assert (
+            web_client.post(
+                "/api/ratings/", {}, content_type="application/json"
+            ).status_code
+            == 503
+        )
+
+
+def test_rating_expiry_and_estimator_reuse(tmp_path):
+    estimates = []
+
+    class Estimator:
+        def __init__(self):
+            estimates.append(self)
+
+        def predict_pgn(self, pgn):
+            return RatingResult(
+                white=1200,
+                black=1300,
+                model_id="test",
+                engine_compatibility="exact",
+            )
+
+    with override_settings(RATING_JOB_DATABASE=tmp_path / "jobs.sqlite3"):
+        store = RatingJobStore()
+        worker = RatingWorker(store, Estimator)
+        first = store.submit("first")
+        store.submit("second")
+        assert worker.process_next()
+        assert worker.process_next()
+        assert len(estimates) == 1
+        with store._connection() as connection:
+            connection.execute("UPDATE rating_jobs SET expires = 0")
+        assert store.get(first.id) is None
+        assert not worker.process_next()
+
+
+def test_rating_validation_methods_and_csrf(web_client, tmp_path):
+    with override_settings(
+        RATING_MODEL_DIRECTORY="model",
+        RATING_JOB_DATABASE=tmp_path / "jobs.sqlite3",
+    ):
+        assert web_client.get("/api/ratings/").status_code == 405
+        assert web_client.post("/api/ratings/", {"pgn": "*"}).status_code == 415
+        for body in ("{", "[]", "{}", '{"pgn":1}', '{"pgn":"*"}'):
+            response = web_client.post(
+                "/api/ratings/",
+                body,
+                content_type="application/json",
+            )
+            assert response.status_code == 400
+        client = Client(enforce_csrf_checks=True)
+        assert (
+            client.post(
+                "/api/ratings/",
+                {"pgn": "*"},
+                content_type="application/json",
+            ).status_code
+            == 403
+        )
+        assert not (tmp_path / "jobs.sqlite3").exists()
 
 
 @pytest.fixture

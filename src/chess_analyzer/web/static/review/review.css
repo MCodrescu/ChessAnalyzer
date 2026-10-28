@@ -66,6 +66,12 @@ form > label { font-size: 11px; color: var(--muted); display: block; margin-bott
 .comparison-cards > div { background: #15191e; padding: 8px 12px; border-radius: 7px; border: 1px solid var(--border); }
 .comparison-cards strong { display: block; font-size: 24px; font-weight: 600; margin-top: 4px; }.comparison-cards .best-card { background: #bce58007; border-color: #bce58030; }.best-card strong { color: var(--accent); }
 .metrics { display: flex; justify-content: space-between; gap: 12px; margin: 10px 0; font-size: 10px; color: var(--muted); }.metrics strong { color: var(--text); margin-left: 5px; font-weight: 550; }
+.performance-ratings { min-height: 28px; align-items: center; margin: 4px 0; }
+.performance-ratings strong { display: inline-block; min-width: 5ch; font-size: 19px; font-variant-numeric: tabular-nums; }
+.summary-panel .panel-heading:has(+ .performance-ratings) { margin-top: 12px; }
+.summary-panel .panel-heading h2 { min-width: 0; overflow-wrap: anywhere; }
+#rating-status { margin: 4px 0; font-size: 10px; overflow-wrap: anywhere; }
+#retry-rating { font-size: 10px; padding: 5px 8px; }
 .preview-tabs { display: flex; background: #13171c; border-radius: 6px; padding: 3px; gap: 3px; }.preview-tabs button { flex: 1; padding: 8px 3px; font-size: 10px; border-radius: 4px; }.preview-tabs [aria-pressed="true"] { background: #343e46; color: var(--accent); }
 #preview-note { margin-bottom: 0; font-size: 10px; }
 .move-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-height: 240px; overflow-y: auto; scrollbar-width: thin; }

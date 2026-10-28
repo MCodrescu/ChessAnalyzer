@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from threading import BoundedSemaphore
 
+from django.conf import settings
 from django.core.exceptions import RequestDataTooBig
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -13,6 +14,8 @@ from django.views.decorators.http import require_GET, require_POST
 from chess_analyzer.config import ConfigurationError
 from chess_analyzer.models import InvalidPGNError, StockfishEngineError
 from chess_analyzer.web.chesscom import ChessComLookupError, list_archives, list_games
+from chess_analyzer.web.rating import validate_rating_pgn
+from chess_analyzer.web.rating_jobs import RatingJobStore, RatingQueueFull
 from chess_analyzer.web.services import (
     InvalidPositionError,
     analyze_pgn,
@@ -92,6 +95,67 @@ def position_analysis(request: HttpRequest) -> JsonResponse:
     return _analysis_response(
         lambda: analyze_position(data["fen"], chess960=data.get("chess960", False))
     )
+
+
+@never_cache
+@require_POST
+def rating_submit(request: HttpRequest) -> JsonResponse:
+    """Validate and enqueue a game without running inference in the request.
+
+    Args:
+        request: CSRF-protected JSON request containing the original PGN.
+
+    Returns:
+        A job ID with HTTP 202, or a safe validation/availability error.
+    """
+    if not settings.RATING_MODEL_DIRECTORY:
+        return JsonResponse(
+            {"error": "Performance ratings are not configured."}, status=503
+        )
+    if request.content_type != "application/json":
+        return JsonResponse({"error": "Send a JSON object containing pgn."}, status=415)
+    try:
+        data = json.loads(request.body)
+    except RequestDataTooBig:
+        return JsonResponse({"error": "The PGN request is too large."}, status=413)
+    except (ValueError, UnicodeError):
+        return JsonResponse({"error": "Invalid JSON request."}, status=400)
+    if not isinstance(data, dict) or not isinstance(data.get("pgn"), str):
+        return JsonResponse({"error": "Provide a PGN string."}, status=400)
+    try:
+        validate_rating_pgn(data["pgn"])
+        job = RatingJobStore().submit(data["pgn"])
+    except InvalidPGNError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    except RatingQueueFull as error:
+        response = JsonResponse({"error": str(error)}, status=429)
+        response["Retry-After"] = "10"
+        return response
+    return JsonResponse(job.model_dump(mode="json"), status=202)
+
+
+@never_cache
+@require_GET
+def rating_status(request: HttpRequest, job_id: str) -> JsonResponse:
+    """Return job state to the holder of its unguessable capability ID.
+
+    Args:
+        request: Same-origin status request.
+        job_id: Identifier returned by rating_submit.
+
+    Returns:
+        Public job state without PGN, or HTTP 404 after expiry.
+    """
+    if not settings.RATING_MODEL_DIRECTORY:
+        return JsonResponse(
+            {"error": "Performance ratings are not configured."}, status=503
+        )
+    job = RatingJobStore().get(job_id)
+    if job is None:
+        return JsonResponse(
+            {"error": "Rating job expired or was not found."}, status=404
+        )
+    return JsonResponse(job.model_dump(mode="json"))
 
 
 def _analysis_response(analyze_input: Callable[[], dict]) -> JsonResponse:

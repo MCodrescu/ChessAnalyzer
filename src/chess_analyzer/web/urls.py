@@ -20,5 +20,7 @@ urlpatterns = [
     path("", views.index, name="review"),
     path("api/analyze/", views.analyze, name="analyze"),
     path("api/position/", views.position_analysis, name="position-analysis"),
+    path("api/ratings/", views.rating_submit, name="rating-submit"),
+    path("api/ratings/<slug:job_id>/", views.rating_status, name="rating-status"),
     path("api/chesscom/games/", views.chesscom_games, name="chesscom-games"),
 ]

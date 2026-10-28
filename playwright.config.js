@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/browser',
   fullyParallel: true,
-  use: { baseURL: 'http://127.0.0.1:8765', trace: 'retain-on-failure' },
+  use: { baseURL: 'http://127.0.0.1:8765', trace: 'retain-on-failure', channel: process.env.CHESS_ANALYZER_BROWSER_CHANNEL },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
