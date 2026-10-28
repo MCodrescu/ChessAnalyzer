@@ -1,55 +1,54 @@
-# General Development Instructions
+---
+description: 'General code generation standards'
+applyTo: '**'
+---
 
-## Scope and project context
+# Code generation standards
 
-- Apply these defaults across languages and frameworks. Follow explicit task requirements and more specific repository instructions when they differ from these defaults.
-- Before making changes, read relevant project documentation, configuration, implementation, and tests. Follow established architecture, naming, formatting, and tooling conventions.
-- Do not assume commands, APIs, dependencies, or environment capabilities exist; verify them from the project or authoritative documentation.
-- Ask for clarification when ambiguity materially affects correctness, security, compatibility, or scope. Otherwise, proceed with a reasonable assumption and state it when relevant.
+## Simplicity
+- Write straightforward, logically simple code. Avoid cleverness, indirection, and convolution.
+- Add complexity only when a measured or clearly reasoned performance requirement, or an explicit correctness or security requirement, cannot be met by the simpler approach.
+- Prefer the most readable solution that solves the actual problem — nothing more.
 
-## Design and readability
+## Structure and modularity
+- Break code into small, manageable, single-purpose pieces.
+- Split logic across separate files/modules and import what you need rather than inlining everything.
+- Avoid monoliths. Only keep code in one large unit when that genuinely fits the use case.
+- Design isolated, independently testable components. Keep dependencies explicit and injectable where practical.
+- Use config driven organization of settings and configuration. All common constants and settings shared across modules should be imported from a single location.
+- Use pydantic models for data structures and model response templates.
 
-- Prefer the simplest correct solution. Avoid speculative features, premature optimization, unnecessary abstractions, and unrelated refactoring.
-- Use descriptive, consistent names that make intent clear. Keep functions, methods, and modules focused on a single responsibility.
-- Build cohesive components with explicit interfaces and dependencies. Separate business logic from infrastructure and external I/O when this improves testability and clarity.
-- Prefer object-oriented design when it meaningfully encapsulates state or behavior; use simple functions or other idiomatic patterns when they are clearer. Favor composition over deep inheritance.
-- Reuse existing project functionality before introducing duplicate code or dependencies. Do not force an abstraction for superficially similar code with different responsibilities.
-- Preserve public interfaces and existing behavior unless the task requires a change. Explain unavoidable breaking changes and any migration steps.
 
-## Documentation
+## Style and naming
+- Prefer object-oriented design. Use functional style only for stateless data transformations, pipeline operations, or when the language idiom strongly favors it (e.g., list comprehensions in Python).
+- Use informative, descriptive names for variables, methods, and classes. No cryptic abbreviations.
+- Write clear, informative docstrings in plain, human-sounding language.
+  - No LLM-style filler or over-explaining (avoid phrases like "This function is responsible for...", "Let's...", "As we can see...").
+  - State what it does, its inputs, outputs, and any important behavior — concisely.
+- Do not add comments that merely restate the next line of code. Comment only to explain what the code cannot show on its own.
+- Always include informative doc strings for every method including an args and returns sections with descriptions of each parameter.
+- Separate code by newlines to make it more readable. Jumbled code is difficult to read. Code is read more than it is written. Add comments to describe intention when not clear explicitly from the method names.
 
-- Document new or changed public APIs and non-obvious internal behavior using the language's standard documentation format and the project's conventions.
-- For functions and methods that need documentation, include a brief purpose, arguments, return values, and relevant errors or side effects. Omit sections that do not apply and avoid restating obvious signatures.
-- Use comments to explain intent, constraints, and trade-offs rather than narrating the code. Keep documentation accurate as behavior changes.
-- Update relevant usage examples, configuration guidance, and project documentation when behavior or setup changes.
+## Imports (Python)
+- Follow PEP 8. Group imports as: standard library, third-party, local — separated by blank lines.
+- Sort imports alphabetically within each group.
+- Keep imports at module scope unless a local import is required to avoid a cycle.
+- For non-Python languages, follow the idiomatic import/module organization convention for that language (e.g., Go: stdlib then external then internal; TypeScript: external then internal then relative).
 
-## Correctness and security
 
-- Handle relevant edge cases and failures explicitly. Use meaningful errors; do not silently swallow failures or expose sensitive information in messages or logs.
-- Validate untrusted input at system boundaries. Use safe, idiomatic APIs for database queries, process execution, file access, and serialization.
-- Never hardcode or commit credentials, tokens, or other secrets. Use the project's configuration or secret-management mechanism.
-- Keep changes narrowly scoped. Preserve user changes, and do not perform destructive operations, unrelated cleanup, commits, or pushes unless requested.
+## Correctness and safety
+- Never swallow exceptions. Catch only what you can handle, act on it, and re-raise or log with context otherwise.
+- Catch specific exception types rather than broad `except:` clauses.
+- Avoid race conditions. Use proper synchronization (locks, queues, atomic operations) around shared mutable state.
+- Always keep security in mind: validate and sanitize inputs, avoid injection risks, handle secrets safely, and apply least privilege.
+- Include logging whenever appropriate.
 
-## Dependencies and API usage
+## Performance
+- Use parallelization or concurrency only after measurement or clear workload reasoning shows a likely performance bottleneck, and only when shared state can be managed safely.
+- Start with the simplest correct approach; add concurrency only when evidence shows it will provide meaningful benefit.
 
-- Prefer the standard library and existing dependencies when they meet the requirements. Add a maintained dependency only when it provides a clear benefit over a straightforward implementation.
-- Consult current official documentation when introducing or changing library usage, especially for unfamiliar or version-sensitive APIs. Match the documentation to the project's supported or installed version, not blindly to the newest release.
-- Avoid introducing deprecated APIs. When replacing existing deprecated usage, keep the change relevant to the task and verify compatibility.
-- Use the project's package manager and update dependency manifests and lockfiles together when applicable. Avoid unrelated dependency upgrades.
+## Ruff validation
 
-## Testing and validation
-
-- Add or update automated tests for new behavior and bug fixes. Cover the affected behavior, meaningful edge cases, and failure paths; add a regression test for a bug when practical.
-- Prefer deterministic, isolated tests that verify observable behavior rather than implementation details. Use the existing test framework and conventions.
-- Run relevant tests and the project's configured formatters, linters, type checks, and builds as appropriate. Start with focused checks and expand validation according to the change's impact.
-- For Python, follow PEP 8 and use Ruff for linting and formatting unless the repository specifies different tooling. Respect project configuration rather than imposing conflicting defaults.
-- Do not weaken tests, disable checks, or broadly suppress diagnostics just to make validation pass. Keep necessary exceptions narrow and explain why they are needed.
-- If failures appear pre-existing or unrelated to the change, do not attempt to fix them unless requested; verify they fail on the unchanged baseline when practical and report them separately in the summary.
-- For documentation-only changes, check accuracy, structure, and any configured documentation checks; do not run unrelated application tests.
-- Report what was validated and the outcome. If a check cannot be run, state the limitation and what remains unverified; never claim unexecuted checks passed.
-- If a required tool, dependency, or network resource is unavailable, do not install global tooling or modify the environment outside the project without asking; proceed with the remaining checks and report the gap.
-
-## Delivery
-
-- Review the final changes for correctness, scope, readability, and unintended modifications.
-- Summarize the changes, validation results, and any remaining risks or follow-up work concisely.
+- For Python changes, run `ruff check <touched-files>` after editing.
+- Apply ruff changes automatically.
+- In Agent mode, rerun Ruff after addressing issues.
