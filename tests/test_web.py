@@ -5,7 +5,9 @@ import os
 import runpy
 import sqlite3
 from configparser import ConfigParser
+from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import chess
 import django
@@ -24,13 +26,162 @@ from chess_analyzer.models import (
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "chess_analyzer.web.settings")
 django.setup()
 
-from chess_analyzer.web import services, views  # noqa: E402
+from chess_analyzer.web import services, shared_analysis, views  # noqa: E402
 from chess_analyzer.web.rating import validate_rating_pgn  # noqa: E402
 from chess_analyzer.web.rating_jobs import (  # noqa: E402
     RatingJobStore,
     RatingResult,
     RatingWorker,
 )
+from chess_analyzer.web.shared_analysis import review_from_positions  # noqa: E402
+
+
+def test_review_uses_model_positions_without_another_engine(fake_engine):
+    pgn = "1. e4 e5 *"
+    game, board = services.PGNAnalyzer.parse_game(pgn)
+    positions = []
+    for move in (*game.mainline_moves(), None):
+        best = next(iter(board.legal_moves))
+        positions.append(
+            {
+                "fen": board.fen(),
+                "evaluation": {"cp": 25.0, "mate": None},
+                "candidates": [{"move": best.uci(), "score": {"cp": 25.0}}],
+            }
+        )
+        if move is not None:
+            board.push(move)
+    review = review_from_positions(
+        pgn,
+        positions,
+        {"depth": 12, "threads": 1, "hash_mb": 64},
+    )
+    assert len(review["moves"]) == 2
+    assert review["moves"][0]["evaluation_before"]["cp"] == 25
+    assert review["analysis_time_seconds"] is None
+    assert not fake_engine.instances
+    with pytest.raises(StockfishEngineError, match="incomplete"):
+        review_from_positions(
+            pgn, positions[:-1], {"depth": 12, "threads": 1, "hash_mb": 64}
+        )
+
+
+@pytest.mark.parametrize("prediction_fails", [False, True])
+def test_shared_pipeline_runs_engine_once(monkeypatch, fake_engine, prediction_fails):
+    """Prediction receives the exact positions used by the accuracy/review adapter."""
+    pgn = (
+        '[Result "1-0"]\n[TimeControl "300"]\n\n'
+        "1. e4 {[%clk 0:05:00]} e5 {[%clk 0:04:59]} 1-0"
+    )
+    engine_settings = {"depth": 12, "multipv": 3, "threads": 1, "hash_mb": 64}
+    _, board = services.PGNAnalyzer.parse_game(pgn)
+    moves = (chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5"))
+
+    @dataclass
+    class ModelPosition:
+        fen: str
+        candidates: list
+        evaluation: dict
+
+    positions = []
+    for move in (*moves, None):
+        positions.append(
+            ModelPosition(
+                fen=board.fen(),
+                evaluation={"cp": 25.0, "mate": None},
+                candidates=[
+                    {"move": next(iter(board.legal_moves)).uci(), "score": {"cp": 25}}
+                ],
+            )
+        )
+        if move is not None:
+            board.push(move)
+    runs = []
+
+    class Analyzer:
+        metadata = {"settings": engine_settings}
+        cache_hits = 0
+
+        def __init__(self, config, cache):
+            runs.append("engine")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def analyze(self, game):
+            runs.append("analysis")
+            return "shared-key", positions
+
+    class Estimator:
+        predictor = SimpleNamespace(
+            manifest={"engine": {"settings": engine_settings}},
+            validate_engine_metadata=lambda *args, **kwargs: None,
+        )
+
+        def predict_pgn(self, original, *, analysis, engine_metadata):
+            assert original == pgn
+            assert analysis is positions
+            assert engine_metadata is Analyzer.metadata
+            if prediction_fails:
+                raise ValueError("prediction failed")
+            return RatingResult(
+                white=1500,
+                black=1400,
+                model_id="test",
+                engine_compatibility="exact",
+            )
+
+    modules = {
+        "elo_model.analysis": SimpleNamespace(
+            StockfishAnalyzer=Analyzer, AnalysisCache=lambda path: path
+        ),
+        "elo_model.config": SimpleNamespace(EngineConfig=lambda **kwargs: kwargs),
+        "elo_model.game": SimpleNamespace(
+            GameInput=SimpleNamespace(from_pgn=lambda value: value)
+        ),
+    }
+    monkeypatch.setattr(shared_analysis, "import_module", modules.__getitem__)
+    pipeline = shared_analysis.SharedGameAnalyzer()
+    pipeline.estimator = Estimator()
+    review, rating, error = pipeline.analyze(pgn)
+    assert runs == ["engine", "analysis"]
+    assert not fake_engine.instances
+    assert review["moves"][0]["evaluation_before"]["cp"] == 25
+    if prediction_fails:
+        assert rating is None
+        assert error
+    else:
+        assert rating["analysis_key"] == "shared-key"
+        assert rating["white"] == 1500
+        assert error is None
+
+
+def test_analysis_queues_one_combined_job(web_client, tmp_path, fake_engine):
+    """Configured reviews queue once and return both outputs through status polling."""
+    pgn = "1. e4 e5 *"
+    with override_settings(
+        RATING_MODEL_DIRECTORY="model",
+        RATING_JOB_DATABASE=tmp_path / "jobs.sqlite3",
+    ):
+        response = web_client.post(
+            "/api/analyze/", {"pgn": pgn}, content_type="application/json"
+        )
+        assert response.status_code == 202
+        assert response.json()["status"] == "queued"
+        assert not fake_engine.instances
+        store = RatingJobStore()
+        assert store.claim() == (response.json()["id"], pgn)
+        store.finish(
+            response.json()["id"], review={"moves": []}, error="Missing clocks."
+        )
+        finished = web_client.get(f"/api/ratings/{response.json()['id']}/").json()
+        assert finished["status"] == "complete"
+        assert finished["review"] == {"moves": []}
+        assert finished["result"] is None
+        assert finished["error"] == "Missing clocks."
 
 
 def test_rating_eligibility():
@@ -55,15 +206,16 @@ def test_rating_job_roundtrip(web_client, tmp_path):
     )
 
     class Estimator:
-        def predict_pgn(self, original):
+        def analyze(self, original):
             assert original == pgn
-            return RatingResult(
+            result = RatingResult(
                 white=1500,
                 black=1400,
                 model_id="test-model",
                 category="blitz",
                 engine_compatibility="exact",
             )
+            return {"moves": []}, result.model_dump(mode="json"), None
 
     with override_settings(
         RATING_MODEL_DIRECTORY="model",
@@ -155,13 +307,14 @@ def test_rating_expiry_and_estimator_reuse(tmp_path):
         def __init__(self):
             estimates.append(self)
 
-        def predict_pgn(self, pgn):
-            return RatingResult(
+        def analyze(self, pgn):
+            result = RatingResult(
                 white=1200,
                 black=1300,
                 model_id="test",
                 engine_compatibility="exact",
             )
+            return {"moves": []}, result.model_dump(mode="json"), None
 
     with override_settings(RATING_JOB_DATABASE=tmp_path / "jobs.sqlite3"):
         store = RatingJobStore()

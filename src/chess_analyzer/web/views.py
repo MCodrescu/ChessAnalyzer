@@ -22,6 +22,7 @@ from chess_analyzer.web.services import (
     InvalidPositionError,
     analyze_pgn,
     analyze_position,
+    validate_game_input,
 )
 
 # One CPU-intensive job per web process. Multi-worker deployments need a queue
@@ -82,7 +83,33 @@ def analyze(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Invalid JSON request."}, status=400)
     if not isinstance(data, dict) or not isinstance(data.get("pgn"), str):
         return JsonResponse({"error": "Provide a PGN string."}, status=400)
+    if settings.RATING_MODEL_DIRECTORY:
+        return _queue_game_review(data["pgn"])
     return _analysis_response(lambda: analyze_pgn(data["pgn"]))
+
+
+def _queue_game_review(pgn: str) -> JsonResponse:
+    """Queue one shared review/rating pass without holding an HTTP request open.
+
+    Args:
+        pgn: Original game, validated before storing or allocating an engine.
+
+    Returns:
+        HTTP 202 job state, or safe validation, busy, and storage errors.
+    """
+    try:
+        validate_game_input(pgn)
+        job = RatingJobStore().submit(pgn)
+    except InvalidPGNError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    except RatingQueueFull as error:
+        response = JsonResponse({"error": str(error)}, status=429)
+        response["Retry-After"] = "10"
+        return response
+    except (OSError, sqlite3.Error):
+        logger.exception("Shared game analysis storage failed during submission")
+        return JsonResponse({"error": RATING_STORAGE_ERROR}, status=503)
+    return JsonResponse(job.model_dump(mode="json"), status=202)
 
 
 @never_cache

@@ -74,7 +74,8 @@ from other chess sites because their engine analysis may differ.
 When performance ratings are enabled, eligible completed bullet, blitz, and
 rapid games with recorded clock information can receive an estimated rating
 for each player. The estimate considers move quality, decision difficulty,
-time use, and game context. It calculates separately while you continue reviewing.
+time use, and game context. Your review and rating use the same Stockfish analysis
+and appear together when it finishes.
 
 This is an experimental, single-game estimate on the Chess.com rating scale,
 not an official rating or a measure of your long-term strength. In testing,

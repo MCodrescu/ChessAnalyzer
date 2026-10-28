@@ -53,18 +53,33 @@ def analyze_position(fen: str, *, chess960: bool = False) -> dict:
     }
 
 
-def analyze_pgn(pgn: str) -> dict:
-    """Return serializable analysis and legal best-move preview positions.
+def validate_game_input(pgn: str):
+    """Validate the web game's input and resource limits before queueing or search.
 
-    Validate the PGN and enforce limits before allocating a local engine. Each
-    call owns its client and always closes it, including on analysis failure.
-    Empty games need no engine. Scores retain the analyzer's White perspective.
+    Args:
+        pgn: Original PGN submitted for review.
+
+    Returns:
+        Parsed game and initial board, or raises InvalidPGNError.
     """
     if not isinstance(pgn, str) or len(pgn) > MAX_PGN_CHARACTERS:
         raise InvalidPGNError("Provide a PGN of at most 100,000 characters.")
     game, initial_board = PGNAnalyzer.parse_game(pgn)
     if sum(1 for _ in game.mainline_moves()) > MAX_PLIES:
         raise InvalidPGNError(f"Games may contain at most {MAX_PLIES} half-moves.")
+    return game, initial_board
+
+
+def analyze_pgn(pgn: str) -> dict:
+    """Return serializable analysis and legal best-move preview positions.
+
+    Args:
+        pgn: Standard or Chess960 PGN within web resource limits.
+
+    Returns:
+        Review payload with White-relative scores; the owned engine is closed.
+    """
+    _, initial_board = validate_game_input(pgn)
     # Startup remains lazy so empty games never allocate an engine.
     client = StockfishClient(load_settings())
     try:

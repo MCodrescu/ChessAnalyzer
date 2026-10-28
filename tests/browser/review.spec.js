@@ -37,11 +37,11 @@ test.beforeEach(async ({ page }, testInfo) => {
   });
 });
 
-async function loadReview(page, review = payload) {
+async function loadReview(page, review = payload, job = null) {
   await page.route('**/api/analyze/', async (route) => {
     expect(route.request().headers()['x-csrftoken']).toBeTruthy();
     expect(route.request().postDataJSON().pgn).toContain('f3');
-    await route.fulfill({ json: review });
+    await route.fulfill({ status: job ? 202 : 200, json: job || review });
   });
   await page.goto('/');
   await expect(page.locator('#board cg-board piece')).toHaveCount(32);
@@ -61,38 +61,58 @@ async function squarePoint(page, square) {
     y: (flipped ? rank : 7 - rank) * bounds.height / 8 + bounds.height / 16 };
 }
 
-test('performance ratings finish asynchronously without changing the review', async ({ page }, testInfo) => {
+test('one shared analysis job produces the review and performance ratings', async ({ page }, testInfo) => {
   let polls = 0;
-  await page.route('**/api/ratings/', async (route) => {
-    expect(route.request().headers()['x-csrftoken']).toBeTruthy();
-    expect(route.request().postDataJSON().pgn).toContain('f3');
-    await route.fulfill({ status: 202, json: { id: 'rating-test', status: 'queued' } });
+  let separateRatingRequests = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/ratings/') separateRatingRequests++;
   });
   await page.route('**/api/ratings/rating-test/', (route) => route.fulfill({ json: ++polls === 1
     ? { id: 'rating-test', status: 'running' }
-    : { id: 'rating-test', status: 'complete', result: { white: 1523.4, black: 1476.8, model_id: 'pinned-model' } },
+    : { id: 'rating-test', status: 'complete', review: payload, result: { white: 1523.4, black: 1476.8, model_id: 'pinned-model' } },
   }));
-  await loadReview(page);
-  await expect(page.locator('#rating-status')).toContainText('queued');
+  await loadReview(page, payload, { id: 'rating-test', status: 'queued' });
   await page.getByRole('button', { name: 'Next move', exact: true }).click();
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE4);
-  await expect(page.locator('#rating-status')).toContainText('Calculating');
   await expect(page.locator('#white-rating')).toHaveText('1523', { timeout: 10000 });
   await expect(page.locator('#black-rating')).toHaveText('1477');
   await expect(page.locator('#white-rating')).toHaveAttribute('title', 'Model: pinned-model');
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE4);
+  expect(polls).toBe(2);
+  expect(separateRatingRequests).toBe(0);
   await page.screenshot({ path: `test-results/performance-rating-${testInfo.project.name}.png`, fullPage: true });
 });
 
-test('rating failure is retryable without reanalyzing the game', async ({ page }) => {
-  await loadReview(page);
-  await expect(page.locator('#rating-status')).toContainText('not configured');
-  await page.route('**/api/ratings/', (route) => route.fulfill({ json: {
-    id: 'retry', status: 'complete', result: { white: 1200, black: 1300, model_id: 'model' },
+test('rating unavailability preserves the shared review without another engine pass', async ({ page }) => {
+  await page.route('**/api/ratings/shared-review/', (route) => route.fulfill({ json: {
+    id: 'shared-review', status: 'complete', review: payload, result: null, error: 'Clock information is missing.',
   } }));
-  await page.getByRole('button', { name: 'Retry rating', exact: true }).click();
-  await expect(page.locator('#white-rating')).toHaveText('1200');
+  await loadReview(page, payload, { id: 'shared-review', status: 'queued' });
+  await expect(page.locator('#rating-status')).toHaveText('Clock information is missing.');
+  await expect(page.locator('#white-rating')).toHaveText('—');
   await expect(page.locator('#retry-rating')).toBeHidden();
+  await expect(page.locator('.move-button')).toHaveCount(2);
+});
+
+test('recorded game navigation reuses evaluations without fresh position searches', async ({ page }) => {
+  let positionRequests = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/position/') positionRequests++;
+  });
+  const recorded = {
+    ...payload,
+    moves: payload.moves.map((move, index) => ({
+      ...move,
+      evaluation_after: { ...move.evaluation_after, best_move_uci: index === 0 ? 'e7e5' : 'g1f3' },
+    })),
+  };
+  await loadReview(page, recorded);
+  await page.getByRole('button', { name: 'Played line', exact: true }).click();
+  await expect(page.locator('#best-move')).toHaveText('e5');
+  await expect(page.locator('#position-search-status')).toContainText('Recorded');
+  await page.getByRole('button', { name: 'Last move', exact: true }).click();
+  await expect(page.locator('#best-move')).toHaveText('Nf3');
+  expect(positionRequests).toBe(0);
 });
 
 async function clickMove(page, from, to) {

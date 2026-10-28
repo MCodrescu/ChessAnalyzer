@@ -4,7 +4,6 @@ import json
 import logging
 import sqlite3
 from contextlib import contextmanager
-from importlib import import_module
 from pathlib import Path
 from time import time
 from typing import Literal
@@ -12,6 +11,8 @@ from uuid import uuid4
 
 from django.conf import settings
 from pydantic import BaseModel, FiniteFloat
+
+from chess_analyzer.web.shared_analysis import SharedGameAnalyzer
 
 logger = logging.getLogger(__name__)
 EXPIRE_JOBS_SQL = "DELETE FROM rating_jobs WHERE expires <= ?"
@@ -37,6 +38,7 @@ class RatingJob(BaseModel):
     id: str
     status: Literal["queued", "running", "complete", "failed"]
     result: RatingResult | None = None
+    review: dict | None = None
     error: str | None = None
 
 
@@ -62,8 +64,11 @@ class RatingJobStore:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS rating_jobs "
                 "(id TEXT PRIMARY KEY, status TEXT NOT NULL, pgn TEXT, "
-                "result TEXT, error TEXT, expires REAL NOT NULL)"
+                "result TEXT, error TEXT, expires REAL NOT NULL, review TEXT)"
             )
+            columns = connection.execute("PRAGMA table_info(rating_jobs)").fetchall()
+            if "review" not in {column["name"] for column in columns}:
+                connection.execute("ALTER TABLE rating_jobs ADD COLUMN review TEXT")
 
     @contextmanager
     def _connection(self):
@@ -123,7 +128,8 @@ class RatingJobStore:
         with self._connection() as connection:
             connection.execute(EXPIRE_JOBS_SQL, (time(),))
             row = connection.execute(
-                "SELECT id, status, result, error FROM rating_jobs WHERE id = ?",
+                "SELECT id, status, result, review, error "
+                "FROM rating_jobs WHERE id = ?",
                 (job_id,),
             ).fetchone()
         if row is None:
@@ -133,6 +139,7 @@ class RatingJobStore:
             status=row["status"],
             error=row["error"],
             result=json.loads(row["result"]) if row["result"] else None,
+            review=json.loads(row["review"]) if row["review"] else None,
         )
 
     def claim(self) -> tuple[str, str] | None:
@@ -162,6 +169,7 @@ class RatingJobStore:
         job_id: str,
         *,
         result: RatingResult | None = None,
+        review: dict | None = None,
         error: str | None = None,
     ):
         """Persist a terminal state and delete the raw PGN immediately.
@@ -169,6 +177,7 @@ class RatingJobStore:
         Args:
             job_id: Claimed job identifier.
             result: Validated estimate on success.
+            review: Board-review payload built from the same engine positions.
             error: User-safe failure description otherwise.
 
         Returns:
@@ -177,11 +186,14 @@ class RatingJobStore:
         with self._connection() as connection:
             connection.execute(
                 "UPDATE rating_jobs SET status = ?, pgn = NULL, result = ?, "
-                "error = ? WHERE id = ?",
+                "error = ?, review = ? WHERE id = ?",
                 (
-                    "complete" if result else "failed",
+                    "complete"
+                    if review is not None or result is not None
+                    else "failed",
                     result.model_dump_json() if result else None,
                     error,
+                    json.dumps(review) if review is not None else None,
                     job_id,
                 ),
             )
@@ -222,21 +234,15 @@ class RatingWorker:
 
     @staticmethod
     def _load_estimator():
-        """Load optional inference dependencies and trusted deployed weights.
+        """Construct the shared analysis pipeline without loading an engine.
 
         Args:
             None.
 
         Returns:
-            One estimator with explicit model, engine, cache and compatibility paths.
+            One reusable shared-game analyzer.
         """
-        config = import_module("elo_model.config").InferenceConfig(
-            model_directory=settings.RATING_MODEL_DIRECTORY,
-            engine_executable=settings.RATING_STOCKFISH_EXECUTABLE,
-            cache_directory=settings.RATING_ANALYSIS_CACHE,
-            engine_compatibility=settings.RATING_ENGINE_COMPATIBILITY,
-        )
-        return import_module("elo_model.inference").RatingEstimator(config)
+        return SharedGameAnalyzer()
 
     def process_next(self) -> bool:
         """Analyze one queued game and record a safe terminal state on failure.
@@ -254,17 +260,17 @@ class RatingWorker:
         try:
             if self.estimator is None:
                 self.estimator = self.estimator_factory()
-            estimate = self.estimator.predict_pgn(pgn)
-            result = RatingResult.model_validate(estimate.model_dump(mode="json"))
+            review, estimate, rating_error = self.estimator.analyze(pgn)
+            result = RatingResult.model_validate(estimate) if estimate else None
         except Exception:
             logger.exception("Performance rating job %s failed", job_id)
             self.store.finish(
                 job_id,
                 error=(
-                    "Performance rating unavailable. "
+                    "Game analysis unavailable. "
                     "Check the model and engine configuration."
                 ),
             )
         else:
-            self.store.finish(job_id, result=result)
+            self.store.finish(job_id, result=result, review=review, error=rating_error)
         return True

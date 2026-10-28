@@ -234,6 +234,17 @@ function currentGamePosition() {
   return selected + (preview === 'played' ? 1 : 0);
 }
 
+function showRecordedPosition(evaluation) {
+  const uci = evaluation.best_move_uci;
+  const best = uci ? boardPosition.moves({ verbose: true }).find((move) =>
+    `${move.from}${move.to}${move.promotion || ''}` === uci) : null;
+  $('best-move').textContent = best?.san || (evaluation.terminal_result ? 'Game over' : 'No recorded suggestion');
+  $('position-search-status').textContent = evaluation.terminal_result
+    ? `Game over: ${formatGameResult(evaluation.terminal_result)}.`
+    : 'Recorded Stockfish analysis for this game position.';
+  ground.setAutoShapes(uci ? [{ orig: moveSquares(uci)[0], dest: moveSquares(uci)[1], brush: 'green' }] : []);
+}
+
 function navigateGamePosition(position) {
   if (!analysis?.moves.length) return;
   const count = analysis.moves.length;
@@ -288,7 +299,9 @@ function selectMove(index, nextPreview = 'before') {
   $('preview-note').textContent = preview === 'before'
     ? 'Before the move: green = engine best, blue = played. One arrow if they match.'
     : preview === 'played' ? (finalPosition ? 'Final position after the last game move.' : 'Position after the actual game move.') : 'Variation after the engine’s suggested move. Click or drag pieces to continue; Reset returns to the game.';
-  if (preview !== 'before') searchPosition();
+  if (preview === 'played' && move.evaluation_after && 'best_move_uci' in move.evaluation_after) {
+    showRecordedPosition(move.evaluation_after);
+  } else if (preview !== 'before') searchPosition();
   // Reveal the selection inside the move list without scrolling the page/board.
   const list = $('move-list');
   const buttonBounds = moveButtons[selected].getBoundingClientRect();
@@ -311,19 +324,10 @@ $('analysis-form').addEventListener('submit', async (event) => {
   setAnalysisBusy(true);
   $('analyze-button').textContent = 'Analyzing…';
   $('analysis-form').setAttribute('aria-busy', 'true');
-  setReviewStatus('Stockfish is reviewing every position. A typical game takes 10–30 seconds; longer games can take several minutes. Keep this tab open.');
+  setReviewStatus('Stockfish is reviewing the game. Accuracy and performance rating share one analysis. This can take several minutes.');
   try {
     await positionSearchQueue;
-    const response = await fetch(event.currentTarget.action, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
-      body: JSON.stringify({ pgn }),
-    });
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) throw new Error('The server returned an unexpected response. Check CSRF settings, request limits, and server timeouts.');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Analysis failed. Please try again.');
+    const data = await ratings.loadReview($('analysis-form').action, pgn, setReviewStatus);
     analysis = data;
     $('white-player').textContent = data.headers.White || 'White';
     $('black-player').textContent = data.headers.Black || 'Black';
@@ -332,7 +336,7 @@ $('analysis-form').addEventListener('submit', async (event) => {
     $('analysis-settings').textContent = `DEPTH ≤ ${data.analysis_depth} · ${data.analysis_time_seconds === null ? 'DEPTH ONLY' : `${data.analysis_time_seconds}s/POS`}`;
     renderMoveList();
     summary.render(data);
-    ratings.start(pgn);
+    ratings.render(data);
     setOrientation(orientation);
     selectMove(0);
     setReviewStatus('Analysis complete. Click any move to compare the choices.');

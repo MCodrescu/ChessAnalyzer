@@ -75,33 +75,32 @@ test('rating results from an old game cannot overwrite the current game', async 
   const responses = [];
   context.mock.method(globalThis, 'fetch', () => new Promise((resolve) => responses.push(resolve)));
   const ratings = new RatingSummary();
-  ratings.start('old game');
-  ratings.start('new game');
+  const old = ratings.loadReview('/api/analyze/', 'old game');
+  const rejected = assert.rejects(old, { name: 'AbortError' });
+  const current = ratings.loadReview('/api/analyze/', 'new game');
   const complete = (white) => ({ ok: true, json: async () => ({
-    status: 'complete', result: { white, black: 1200, model_id: 'model' },
+    status: 'complete', review: { moves: [] }, result: { white, black: 1200, model_id: 'model' },
   }) });
   responses[1](complete(1500));
-  await new Promise(setImmediate);
+  ratings.render(await current);
   responses[0](complete(900));
-  await new Promise(setImmediate);
+  await rejected;
   assert.equal(element('white-rating').textContent, '1500');
 });
 
-test('rating validation failures do not retry and transient failures can retry', async (context) => {
+test('analysis failures propagate without submitting a second rating job', async (context) => {
   const element = ratingDOM(context);
   let status = 400;
   context.mock.method(globalThis, 'fetch', async () => ({
     ok: false, status, json: async () => ({ error: 'Unavailable' }),
   }));
   const ratings = new RatingSummary();
-  ratings.start('game');
-  await new Promise(setImmediate);
-  assert.equal(element('retry-rating').hidden, true);
+  await assert.rejects(ratings.loadReview('/api/analyze/', 'game'), /Unavailable/);
   status = 429;
-  ratings.start('game');
-  await new Promise(setImmediate);
-  assert.equal(element('retry-rating').hidden, false);
-  assert.equal(element('rating-status').textContent, 'Unavailable');
+  await assert.rejects(ratings.loadReview('/api/analyze/', 'game'), /Unavailable/);
+  ratings.render({ moves: [], rating_error: 'Unsupported time control.' });
+  assert.equal(element('retry-rating').hidden, true);
+  assert.equal(element('rating-status').textContent, 'Unsupported time control.');
 });
 
 test('rating HTML errors report the HTTP status instead of a generic retrieval failure', async (context) => {
@@ -111,14 +110,8 @@ test('rating HTML errors report the HTTP status instead of a generic retrieval f
     status, headers: { 'Content-Type': 'text/html' },
   }));
   const ratings = new RatingSummary();
-  ratings.start('game');
-  await new Promise(setImmediate);
-  assert.match(element('rating-status').textContent, /HTTP 500/);
+  await assert.rejects(ratings.loadReview('/api/analyze/', 'game'), /HTTP 500/);
   assert.doesNotMatch(element('rating-status').textContent, /Private server error/);
-  assert.equal(element('retry-rating').hidden, false);
   status = 403;
-  ratings.start('game');
-  await new Promise(setImmediate);
-  assert.match(element('rating-status').textContent, /HTTP 403.*reload/i);
-  assert.equal(element('retry-rating').hidden, true);
+  await assert.rejects(ratings.loadReview('/api/analyze/', 'game'), /HTTP 403.*reload/i);
 });
