@@ -40,7 +40,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN git init /model \
     && git -C /model remote add origin https://github.com/MCodrescu/ELO-Estimator.git \
-    && git -C /model fetch --depth 1 origin e9867d40a996dee6a98ddbaf2a52bce0c2ab2078 \
+    && git -C /model fetch --depth 1 origin 37a90906ccda8da3012673f8ffe2b47c36671a55 \
     && git -C /model checkout --detach FETCH_HEAD
 RUN git init /stockfish \
     && git -C /stockfish remote add origin https://github.com/official-stockfish/Stockfish.git \

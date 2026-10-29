@@ -23,7 +23,7 @@ dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 web = ["gunicorn>=23,<24", "supervisor>=4.2.5,<5"]
 notebook = ["ipykernel>=6,<8"]
 rating = [
-    "chess-rating-estimator[engine] @ git+https://github.com/MCodrescu/ELO-Estimator.git@e9867d40a996dee6a98ddbaf2a52bce0c2ab2078",
+    "chess-rating-estimator[engine] @ git+https://github.com/MCodrescu/ELO-Estimator.git@37a90906ccda8da3012673f8ffe2b47c36671a55",
     "filelock>=3.16,<4",
 ]
 

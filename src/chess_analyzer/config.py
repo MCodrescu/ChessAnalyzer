@@ -36,7 +36,7 @@ class Settings:
     Args:
         stockfish_path: Executable path/name, not a shell command. None discovers
             Stockfish on PATH or in common Linux package locations at startup.
-        analysis_depth: Maximum search depth, from 1 to 128 (not guaranteed reached).
+        analysis_depth: Maximum search depth, from 1 to 128; None is timed-only.
         analysis_time_seconds: Search time cap per position; None is depth-only.
         engine_timeout_seconds: Positive protocol/startup timeout. Search time is
             added to this allowance by python-chess when a time cap is enabled.
@@ -49,7 +49,7 @@ class Settings:
     """
 
     stockfish_path: str | None = None
-    analysis_depth: int = DEFAULT_DEPTH
+    analysis_depth: int | None = DEFAULT_DEPTH
     analysis_time_seconds: float | None = DEFAULT_ANALYSIS_TIME_SECONDS
     engine_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     threads: int = DEFAULT_THREADS
@@ -62,15 +62,41 @@ class Settings:
             or "\x00" in self.stockfish_path
         ):
             raise ConfigurationError(f"{ENGINE_PATH_ENV} must be an executable path.")
+        self._validate_search_limits()
+
+    def _validate_search_limits(self) -> None:
+        """Reject invalid resources and unbounded searches.
+
+        Args:
+            None.
+
+        Returns:
+            None; invalid limits raise ConfigurationError.
+        """
+        if self.analysis_depth is None and self.analysis_time_seconds is None:
+            raise ConfigurationError("A depth or analysis time is required.")
         for name, value, maximum in (
             (DEPTH_ENV, self.analysis_depth, 128),
             (THREADS_ENV, self.threads, 1024),
             (HASH_ENV, self.hash_mb, 1048576),
         ):
+            if name == DEPTH_ENV and value is None:
+                continue
             if type(value) is not int or not 1 <= value <= maximum:
                 raise ConfigurationError(
                     f"{name} must be an integer from 1 to {maximum}."
                 )
+        self._validate_search_times()
+
+    def _validate_search_times(self) -> None:
+        """Require positive finite protocol and enabled search time limits.
+
+        Args:
+            None.
+
+        Returns:
+            None; invalid times raise ConfigurationError.
+        """
         for name, value in (
             (TIMEOUT_ENV, self.engine_timeout_seconds),
             (ANALYSIS_TIME_ENV, self.analysis_time_seconds),

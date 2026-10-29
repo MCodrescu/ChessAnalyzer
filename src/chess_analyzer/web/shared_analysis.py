@@ -37,7 +37,7 @@ class PrecomputedEvaluator:
         """
         self.settings = Settings(
             analysis_depth=engine_settings["depth"],
-            analysis_time_seconds=None,
+            analysis_time_seconds=engine_settings.get("time_seconds"),
             threads=engine_settings["threads"],
             hash_mb=engine_settings["hash_mb"],
         )

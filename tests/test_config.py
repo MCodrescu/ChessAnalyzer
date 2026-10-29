@@ -33,6 +33,9 @@ def test_settings_are_immutable(settings):
 )
 @pytest.mark.parametrize("bad", [None, True, False, "2", 1.5, 0, -1, float("inf")])
 def test_integer_limits_reject_invalid_values(attribute, name, maximum, bad):
+    if attribute == "analysis_depth" and bad is None:
+        assert Settings(analysis_depth=None).analysis_depth is None
+        return
     with pytest.raises(ConfigurationError, match=name):
         Settings(**{attribute: bad})
     with pytest.raises(ConfigurationError, match=name):
@@ -54,6 +57,8 @@ def test_search_times_must_be_positive_finite(attribute, bad):
 
 def test_only_analysis_time_can_be_none():
     assert Settings(analysis_time_seconds=None).analysis_time_seconds is None
+    with pytest.raises(ConfigurationError, match="depth or analysis time"):
+        Settings(analysis_depth=None, analysis_time_seconds=None)
     with pytest.raises(ConfigurationError, match=config.TIMEOUT_ENV):
         Settings(engine_timeout_seconds=None)
 

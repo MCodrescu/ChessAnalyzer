@@ -62,6 +62,7 @@ async function squarePoint(page, square) {
 }
 
 test('one shared analysis job produces the review and performance ratings', async ({ page }, testInfo) => {
+  const fastReview = { ...payload, analysis_depth: null, analysis_time_seconds: 0.1 };
   let polls = 0;
   let separateRatingRequests = 0;
   page.on('request', (request) => {
@@ -69,9 +70,10 @@ test('one shared analysis job produces the review and performance ratings', asyn
   });
   await page.route('**/api/ratings/rating-test/', (route) => route.fulfill({ json: ++polls === 1
     ? { id: 'rating-test', status: 'running' }
-    : { id: 'rating-test', status: 'complete', review: payload, result: { white: 1523.4, black: 1476.8, model_id: 'pinned-model' } },
+    : { id: 'rating-test', status: 'complete', review: fastReview, result: { white: 1523.4, black: 1476.8, model_id: 'pinned-model' } },
   }));
   await loadReview(page, payload, { id: 'rating-test', status: 'queued' });
+  await expect(page.locator('#analysis-settings')).toHaveText('0.1s/POS');
   await page.getByRole('button', { name: 'Next move', exact: true }).click();
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE4);
   await expect(page.locator('#white-rating')).toHaveText('1523', { timeout: 10000 });

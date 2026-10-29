@@ -333,7 +333,10 @@ $('analysis-form').addEventListener('submit', async (event) => {
     $('black-player').textContent = data.headers.Black || 'Black';
     $('game-event').textContent = data.headers.Event || 'Imported game';
     $('game-result').textContent = `Result: ${data.headers.Result || '*'} · ${data.moves.length} half-moves`;
-    $('analysis-settings').textContent = `DEPTH ≤ ${data.analysis_depth} · ${data.analysis_time_seconds === null ? 'DEPTH ONLY' : `${data.analysis_time_seconds}s/POS`}`;
+    $('analysis-settings').textContent = [
+      data.analysis_depth === null ? null : `DEPTH ≤ ${data.analysis_depth}`,
+      data.analysis_time_seconds === null ? 'DEPTH ONLY' : `${data.analysis_time_seconds}s/POS`,
+    ].filter(Boolean).join(' · ');
     renderMoveList();
     summary.render(data);
     ratings.render(data);

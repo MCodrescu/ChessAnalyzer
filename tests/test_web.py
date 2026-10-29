@@ -4,6 +4,7 @@ import json
 import os
 import runpy
 import sqlite3
+import tomllib
 from configparser import ConfigParser
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,7 +74,16 @@ def test_shared_pipeline_runs_engine_once(monkeypatch, fake_engine, prediction_f
         '[Result "1-0"]\n[TimeControl "300"]\n\n'
         "1. e4 {[%clk 0:05:00]} e5 {[%clk 0:04:59]} 1-0"
     )
-    engine_settings = {"depth": 12, "multipv": 3, "threads": 1, "hash_mb": 64}
+    engine_settings = {
+        "depth": None,
+        "nodes": None,
+        "time_seconds": 0.1,
+        "multipv": 1,
+        "threads": 1,
+        "hash_mb": 64,
+        "hash_reset": "game",
+        "played_move_scoring": "next-position",
+    }
     _, board = services.PGNAnalyzer.parse_game(pgn)
     moves = (chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5"))
 
@@ -103,6 +113,10 @@ def test_shared_pipeline_runs_engine_once(monkeypatch, fake_engine, prediction_f
         cache_hits = 0
 
         def __init__(self, config, cache):
+            assert config == {
+                "executable": shared_analysis.settings.RATING_STOCKFISH_EXECUTABLE,
+                **engine_settings,
+            }
             runs.append("engine")
 
         def __enter__(self):
@@ -150,6 +164,8 @@ def test_shared_pipeline_runs_engine_once(monkeypatch, fake_engine, prediction_f
     assert runs == ["engine", "analysis"]
     assert not fake_engine.instances
     assert review["moves"][0]["evaluation_before"]["cp"] == 25
+    assert review["analysis_depth"] is None
+    assert review["analysis_time_seconds"] == 0.1
     if prediction_fails:
         assert rating is None
         assert error
@@ -468,6 +484,15 @@ def test_default_container_starts_web_and_rating_worker():
     assert "gunicorn" in configuration["program:web"]["command"]
     assert configuration["program:rating-worker"]["command"].endswith("rating_worker")
     dockerfile = (root / "Dockerfile").read_text()
+    dependencies = tomllib.loads((root / "pyproject.toml").read_text())[
+        "project"
+    ]["optional-dependencies"]["rating"]
+    estimator_dependency = next(
+        dependency for dependency in dependencies
+        if dependency.startswith("chess-rating-estimator")
+    )
+    estimator_commit = estimator_dependency.rsplit("@", 1)[1]
+    assert f"fetch --depth 1 origin {estimator_commit}" in dockerfile
     assert dockerfile.strip().endswith("FROM rating-web AS web")
     assert "FROM rating-runtime AS rating-web" in dockerfile
     assert (
