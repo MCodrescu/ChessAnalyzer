@@ -35,7 +35,13 @@
           </div>
           <button id="flip" class="secondary" title="Flip board">⇅ Flip</button>
         </div>
-        <div class="board-caption"><span class="legend green"></span> Engine best <span class="legend blue"></span> Played move <span class="keyboard-hint"><button id="undo-variation" type="button" title="Undo your last board move" disabled>Undo</button><button id="reset-variation" type="button" title="Return to the reviewed position" disabled>Reset</button></span></div>
+        <div class="board-caption">
+          <div class="board-legend"><span><span class="legend green"></span> Engine best</span><span><span class="legend blue"></span> Played move</span></div>
+          <div class="variation-actions" role="group" aria-label="Variation controls">
+            <button id="undo-variation" type="button" title="Undo your last board move" disabled><span aria-hidden="true">↶</span> Undo</button>
+            <button id="reset-variation" type="button" title="Return to the reviewed position" disabled><span aria-hidden="true">↺</span> Reset</button>
+          </div>
+        </div>
       </div>
       <aside class="review-column">
         <div class="review-status">

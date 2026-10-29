@@ -233,12 +233,21 @@ test('clicks legal moves before import, rejects illegal moves, and resets', asyn
 
 test('trial moves preserve review scores and return through undo, reset, and navigation', async ({ page }) => {
   await loadReview(page);
+  const boardBounds = await page.locator('#board').boundingBox();
   const graph = await page.locator('#graph-line').getAttribute('d');
   await clickMove(page, 'd2', 'd4');
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterD4);
   await expect(page.locator('#evaluation')).toHaveText('+0.15');
   await expect(page.locator('#best-move')).toHaveText('d5');
   await expect(page.locator('body')).toHaveClass(/variation-mode/);
+  for (const name of ['Undo', 'Reset']) {
+    const control = page.getByRole('button', { name, exact: true });
+    await expect(control).toBeEnabled();
+    await expect(control).toBeInViewport();
+    expect((await control.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  }
+  expect(await page.locator('#board').boundingBox()).toEqual(boardBounds);
+  await expect(page.locator('#reset-variation')).toHaveCSS('background-color', 'rgb(188, 229, 128)');
   await expect(page.locator('#preview-note')).toContainText('continue your variation');
   await expect(page.locator('#graph-line')).toHaveAttribute('d', graph);
   await expect(page.locator('#white-accuracy')).toHaveText('87.5%');
