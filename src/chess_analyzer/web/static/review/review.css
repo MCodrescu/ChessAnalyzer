@@ -55,7 +55,7 @@ body.variation-mode #reset-variation:hover:not(:disabled) { background: #cdef9c;
 h2 { font-size: 14px; font-weight: 650; margin: 0; }
 .small-label { color: var(--muted); font-size: 9px; letter-spacing: .09em; }
 form > label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 8px; }
-.selection-summary { padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: #15191e; overflow-wrap: anywhere; }
+#chesscom-status:empty { display: none; }
 .import-actions { display: flex; gap: 10px; justify-content: space-between; align-items: center; margin-top: 12px; }
 .username-search { display: flex; gap: 8px; }
 .username-search input, #chesscom-picker select { background: #15191e; border: 1px solid var(--border); border-radius: 6px; padding: 9px; color: var(--text); min-width: 0; font-size: 11px; }

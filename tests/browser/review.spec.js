@@ -549,7 +549,7 @@ test('game loader traps focus, dismisses with Escape, and preserves the review',
   await expect(page.locator('#move-counter')).toHaveText('2 / 2');
   await page.getByRole('button', { name: 'Load game', exact: true }).click();
   await expect(page.locator('#chesscom-username')).toHaveValue('OtherPlayer');
-  await expect(page.locator('#selected-game')).toContainText('Choose a game');
+  await expect(page.locator('#selected-game')).toHaveCount(0);
   await page.getByRole('button', { name: 'Close game loader' }).click();
   await expect(page.locator('#import-dialog')).not.toBeVisible();
 });

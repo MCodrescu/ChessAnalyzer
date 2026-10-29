@@ -139,7 +139,6 @@
     <p id="chesscom-error" class="lookup-error" role="alert" hidden></p>
     <form id="analysis-form" action="{% url 'analyze' %}">
       {% csrf_token %}
-      <p id="selected-game" class="selection-summary muted" role="status" aria-live="polite">Choose a game above to enable analysis.</p>
       <div class="import-actions"><button type="button" id="demo" class="secondary">Use example game</button><button id="analyze-button" type="submit" class="primary" disabled>Analyze game</button></div>
     </form>
     <p id="import-status" class="muted" role="status" aria-live="polite">Local analysis. Rating jobs temporarily store the game.</p>

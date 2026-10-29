@@ -37,10 +37,9 @@ export function setBoardReady(ready) {
   updateControls();
 }
 
-function selectGame(pgn = '', label = 'Choose a game above to enable analysis.', orientation = 'white') {
+function selectGame(pgn = '', orientation = 'white') {
   selectedPgn = pgn;
   selectedOrientation = orientation;
-  $('selected-game').textContent = label;
   if (boardReady) {
     $('error').hidden = true;
     $('import-error').hidden = true;
@@ -52,7 +51,7 @@ function selectListedGame() {
   const index = $('chesscom-game').selectedIndex;
   const game = games[index];
   const orientation = game?.black.username.toLowerCase() === username.toLowerCase() ? 'black' : 'white';
-  selectGame(game?.pgn || '', game ? $('chesscom-game').options[index].textContent : undefined, orientation);
+  selectGame(game?.pgn || '', orientation);
 }
 
 function showError(message = '') {
@@ -145,7 +144,7 @@ async function loadMonth(page, signal) {
   selectListedGame();
   $('games-page').textContent = `${data.total} games · ${currentPage} / ${pages}`;
   $('chesscom-status').textContent = games.length
-    ? `Choose a game for ${username}, then select Analyze game. Dates use your local time.`
+    ? ''
     : 'No completed standard or Chess960 games with importable PGNs in this month. Try another archive month.';
 }
 
@@ -197,7 +196,7 @@ $('demo').addEventListener('click', () => {
   $('chesscom-game').replaceChildren();
   $('chesscom-picker').hidden = true;
   showError();
-  selectGame('[Event "A quick lesson"]\n[White "Curious player"]\n[Black "Club opponent"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1', 'Example: Curious player vs Club opponent · Fool’s mate');
+  selectGame('[Event "A quick lesson"]\n[White "Curious player"]\n[Black "Club opponent"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1');
   $('chesscom-status').textContent = 'Example selected. No Chess.com lookup needed.';
   setReviewStatus('Example selected: Fool’s mate. Select Analyze game to explore.');
 });

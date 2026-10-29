@@ -48,7 +48,9 @@ test('finds a username, selects a game and sends its PGN for analysis', async ({
   await expect(page.locator('#chesscom-game option').first()).toContainText('1–0');
   await expect(page.locator('#chesscom-game option').last()).toContainText('½–½');
   await page.locator('#chesscom-game').selectOption('1');
-  await expect(page.locator('#selected-game')).toContainText('½–½');
+  await expect(page.locator('#chesscom-game option:checked')).toContainText('½–½');
+  await expect(page.locator('#selected-game')).toHaveCount(0);
+  await expect(page.locator('#chesscom-status')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Load selected game' })).toHaveCount(0);
   await expect(page.locator('textarea, input[type="file"]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Analyze game' })).toHaveCount(1);
@@ -83,7 +85,7 @@ test('browses game pages and months without leaving stale games on failure', asy
   await expect(page.locator('#games-page')).toHaveText('26 games · 1 / 2');
   await page.getByRole('button', { name: 'Next game page' }).click();
   await expect(page.locator('#games-page')).toHaveText('26 games · 2 / 2');
-  await expect(page.locator('#selected-game')).toContainText('½–½');
+  await expect(page.locator('#chesscom-game option:checked')).toContainText('½–½');
   await expect(page.getByRole('button', { name: 'Analyze game' })).toBeEnabled();
   await page.getByRole('button', { name: 'Previous game page' }).click();
   await expect(page.locator('#games-page')).toHaveText('26 games · 1 / 2');
@@ -191,7 +193,7 @@ test('labels and analyzes a selected Chess960 game with the local engine', async
   await openLoader(page);
   await page.locator('#chesscom-username').fill('Player');
   await page.getByRole('button', { name: 'Find games', exact: true }).click();
-  await expect(page.locator('#selected-game')).toContainText('Chess960');
+  await expect(page.locator('#chesscom-game option:checked')).toContainText('Chess960');
   await page.getByRole('button', { name: 'Analyze game', exact: true }).click();
   await expect(page.locator('#status')).toContainText('Analysis complete', { timeout: 30_000 });
   await expect(page.locator('#board')).toHaveAttribute('data-fen', fen);
@@ -221,8 +223,8 @@ test('editing the username cancels pending results and invalidates old selection
   await expect(page.getByRole('button', { name: 'Find games', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Find games', exact: true }).click();
   release();
-  await expect(page.locator('#chesscom-status')).toContainText('Choose a game for player');
   await expect(page.locator('#chesscom-game option')).toHaveCount(2);
+  await expect(page.locator('#chesscom-status')).toBeHidden();
   await page.locator('#chesscom-username').fill('different');
   await expect(page.locator('#chesscom-picker')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
@@ -252,7 +254,7 @@ test('pending month changes clear the old game before lookup finishes', async ({
   await page.locator('#chesscom-month').selectOption('2026-09');
   await expect(page.locator('#chesscom-form')).toHaveAttribute('aria-busy', 'true');
   await expect(page.getByRole('button', { name: 'Analyze game' })).toBeDisabled();
-  await expect(page.locator('#selected-game')).toContainText('Choose a game');
+  await expect(page.locator('#chesscom-game option')).toHaveCount(0);
   await page.locator('#analysis-form').evaluate((form) => form.requestSubmit());
   release();
   await expect(page.locator('#chesscom-error')).toHaveText('Month lookup failed.');
@@ -317,7 +319,7 @@ test('selecting the example cancels lookup without letting late results replace 
   await requested;
   await page.getByRole('button', { name: 'Use example game' }).click();
   release();
-  await expect(page.locator('#selected-game')).toContainText('Fool’s mate');
+  await expect(page.locator('#import-status')).toContainText('Fool’s mate');
   await expect(page.locator('#chesscom-picker')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Analyze game' })).toBeEnabled();
   await page.getByRole('button', { name: 'Analyze game' }).click();
