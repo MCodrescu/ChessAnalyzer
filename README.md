@@ -77,7 +77,7 @@ for each player. The estimate considers move quality, decision difficulty,
 time use, and game context. Your review and estimated ratings appear together
 when analysis finishes.
 
-This is an experimental, single-game estimate on the Chess.com rating scale,
+This is a single-game estimate on the Chess.com rating scale,
 not an official rating or a measure of your long-term strength. Early testing
 is limited, and estimates can be several hundred points off. Treat the number
 as a rough perspective on one performance, not a precise verdict.

@@ -90,7 +90,7 @@ export class RatingSummary {
       rating.textContent = String(Math.round(result[color]));
       rating.title = `Model: ${result.model_version || result.model_id}`;
     }
-    this.status.textContent = 'Experimental single-game estimate on the Chess.com rating scale.';
+    this.status.textContent = 'Single-game estimate on the Chess.com rating scale, not an official rating.';
   }
 
 }

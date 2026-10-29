@@ -633,6 +633,24 @@ test('workspace fits the viewport and keeps the board controls visible', async (
   }
 });
 
+for (const [label, ratings, expected] of [
+  ['recorded', { WhiteElo: '1567', BlackElo: '1482' }, ['Alice (1567)', 'Bob (1482)']],
+  ['missing', {}, ['Alice', 'Bob']],
+  ['unknown', { WhiteElo: '?', BlackElo: '-' }, ['Alice', 'Bob']],
+]) {
+  test(`player names show ${label} game ratings correctly`, async ({ page }) => {
+    await loadReview(page, {
+      ...payload, headers: { ...payload.headers, White: 'Alice', Black: 'Bob', ...ratings },
+    });
+    await expect(page.locator('#white-player')).toHaveText(expected[0]);
+    await expect(page.locator('#black-player')).toHaveText(expected[1]);
+    await page.getByRole('button', { name: 'Flip' }).click();
+    await expect(page.locator('#white-player')).toHaveText(expected[0]);
+    await expect(page.locator('#black-player')).toHaveText(expected[1]);
+    await expect(page.locator('.summary-panel')).not.toContainText(/experimental/i);
+  });
+}
+
 test('player cards follow orientation before analysis and when a new game loads', async ({ page }) => {
   let headers = payload.headers;
   await page.route('**/api/analyze/', (route) => route.fulfill({ json: { ...payload, headers } }));

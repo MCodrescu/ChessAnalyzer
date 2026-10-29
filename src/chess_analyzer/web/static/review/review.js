@@ -329,8 +329,12 @@ $('analysis-form').addEventListener('submit', async (event) => {
     await positionSearchQueue;
     const data = await ratings.loadReview($('analysis-form').action, pgn, setReviewStatus);
     analysis = data;
-    $('white-player').textContent = data.headers.White || 'White';
-    $('black-player').textContent = data.headers.Black || 'Black';
+    for (const color of ['White', 'Black']) {
+      const name = data.headers[color] || color;
+      const rating = String(data.headers[`${color}Elo`] || '').trim();
+      const hasRating = /^\d+$/.test(rating) && Number(rating) > 0;
+      $(`${color.toLowerCase()}-player`).textContent = hasRating ? `${name} (${rating})` : name;
+    }
     $('game-event').textContent = data.headers.Event || 'Imported game';
     $('game-result').textContent = `Result: ${data.headers.Result || '*'} · ${data.moves.length} half-moves`;
     $('analysis-settings').textContent = [
