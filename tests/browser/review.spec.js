@@ -51,6 +51,24 @@ async function loadReview(page, review = payload, job = null) {
   await expect(page.locator('#status')).toContainText('Analysis complete');
 }
 
+async function openAnalysis(page) {
+  if (await page.locator('#show-analysis').isVisible()) {
+    await page.getByRole('button', { name: 'Analysis', exact: true }).click();
+  }
+}
+
+async function closeAnalysis(page) {
+  if (await page.locator('#analysis-dialog').isVisible()) {
+    await page.getByRole('button', { name: 'Close analysis', exact: true }).click();
+  }
+}
+
+async function selectGraphPosition(page, position) {
+  await openAnalysis(page);
+  await page.locator('#graph-position').fill(position);
+  await closeAnalysis(page);
+}
+
 async function squarePoint(page, square) {
   const board = page.locator('#board');
   const bounds = await board.boundingBox();
@@ -61,18 +79,68 @@ async function squarePoint(page, square) {
     y: (flipped ? rank : 7 - rank) * bounds.height / 8 + bounds.height / 16 };
 }
 
+test('compact screens give the board full space and open analysis in a modal', async ({ page }, testInfo) => {
+  await loadReview(page);
+  for (const viewport of [
+    { width: 390, height: 844 }, { width: 390, height: 664 },
+    { width: 320, height: 568 }, { width: 900, height: 700 },
+    { width: 1280, height: 600 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.locator('.workspace > .review-column')).toHaveCount(0);
+    await expect(page.locator('.summary-panel')).toBeHidden();
+    const board = await page.locator('#board').boundingBox();
+    expect(board.width).toBeGreaterThan(Math.min(viewport.width - 30, viewport.height - 270));
+    expect(board.width).toBeCloseTo(board.height, 0);
+    await expect(page.locator('#reset-variation')).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (viewport.width === 390 && viewport.height === 844) {
+      await page.screenshot({ path: `test-results/mobile-board-${testInfo.project.name}.png`, fullPage: true });
+    }
+    await page.getByRole('button', { name: 'Analysis', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Analysis', exact: true })).toBeVisible();
+    await expect(page.locator('#white-accuracy')).toHaveText('87.5%');
+    if (viewport.width === 390 && viewport.height === 844) {
+      await page.screenshot({ path: `test-results/mobile-analysis-${testInfo.project.name}.png`, fullPage: true });
+    }
+    for (let index = 0; index < 5; index++) {
+      await page.keyboard.press('Tab');
+      expect(await page.locator('#analysis-dialog').evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+    }
+    await page.locator('#graph-position').fill('1');
+    await page.locator('#close-analysis').focus();
+    await page.keyboard.press('End');
+    await expect(page.locator('#graph-position')).toHaveValue('1');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#analysis-dialog')).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Analysis', exact: true })).toBeFocused();
+    await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE4);
+    await page.getByRole('button', { name: 'First move', exact: true }).click();
+  }
+  await page.screenshot({ path: `test-results/compact-board-${testInfo.project.name}.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Analysis', exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator('#analysis-dialog')).not.toBeVisible();
+  await expect(page.locator('.workspace > .review-column')).toBeVisible();
+  await expect(page.locator('#show-analysis')).toBeHidden();
+  await expect(page.locator('#white-accuracy')).toHaveText('87.5%');
+  await expect(page.locator('#white-accuracy')).toHaveCount(1);
+});
+
 test('summary-only review preserves board navigation, graph selection, and variations', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await loadReview(page);
+  await openAnalysis(page);
   await expect(page.getByRole('heading', { name: 'Game accuracy', exact: true })).toBeVisible();
   await expect(page.locator('.review-column section')).toHaveCount(1);
   await expect(page.locator('.comparison-panel, .moves-panel, #move-list')).toHaveCount(0);
   await expect(page.locator('#white-accuracy')).toHaveText('87.5%');
+  await closeAnalysis(page);
   await page.getByRole('button', { name: 'Last move', exact: true }).click();
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE5);
   await expect(page.locator('#graph-position')).toHaveValue('2');
-  await page.locator('#graph-position').fill('0');
+  await selectGraphPosition(page, '0');
   await expect(page.locator('#board')).toHaveAttribute('data-fen', start);
   await clickMove(page, 'd2', 'd4');
   await expect(page.locator('body')).toHaveClass(/variation-mode/);
@@ -106,6 +174,7 @@ test('one shared analysis job produces the review and performance ratings', asyn
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE4);
   expect(polls).toBe(2);
   expect(separateRatingRequests).toBe(0);
+  await openAnalysis(page);
   await page.screenshot({ path: `test-results/performance-rating-${testInfo.project.name}.png`, fullPage: true });
 });
 
@@ -133,7 +202,7 @@ test('recorded game navigation reuses evaluations without fresh position searche
     })),
   };
   await loadReview(page, recorded);
-  await page.locator('#graph-position').fill('1');
+  await selectGraphPosition(page, '1');
   await expect(page.locator('#position-search-status')).toContainText('Recorded');
   await page.getByRole('button', { name: 'Last move', exact: true }).click();
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(1);
@@ -214,7 +283,7 @@ for (const [result, message] of [
     }
     await page.getByRole('button', { name: 'Previous move', exact: true }).click();
     await expect(page.locator('#game-over')).toBeHidden();
-    await page.locator('#graph-position').fill('2');
+    await selectGraphPosition(page, '2');
     await expect(page.locator('#game-over')).toHaveText(message);
     await clickMove(page, 'g1', 'f3');
     await expect(page.locator('#game-over')).toBeHidden();
@@ -278,7 +347,7 @@ test('trial moves preserve review scores and return through undo, reset, and nav
   await expect(page.locator('#board')).toHaveAttribute('data-fen', start);
   await expect(page.locator('body')).not.toHaveClass(/variation-mode/);
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(2);
-  await page.locator('#graph-position').fill('1');
+  await selectGraphPosition(page, '1');
   await page.getByRole('button', { name: 'Flip' }).click();
   await clickMove(page, 'e7', 'e5');
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterE5);
@@ -437,7 +506,7 @@ test('Chess960 review supports castling, graph navigation, undo and reset', asyn
   await expect(page.locator('#board')).toHaveAttribute('data-fen', '4k3/8/8/8/8/8/8/2KR1R2 b - - 1 1');
   await page.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect(page.locator('#board')).toHaveAttribute('data-fen', fen);
-  await page.locator('#graph-position').fill('1');
+  await selectGraphPosition(page, '1');
   await expect(page.locator('#board')).toHaveAttribute('data-fen', after);
   await expect(page.locator('#undo-variation')).toBeDisabled();
 });
@@ -502,11 +571,14 @@ test('shows estimated accuracy and a graph synchronized with actual game positio
   await expect(page.locator('#white-accuracy-name img')).toHaveCount(0);
   await expect(page.locator('#graph-line')).toHaveAttribute('d', /^M.+L.+L/);
   await expect(page.locator('#graph-readout')).toHaveText('Start · +0.25');
+  await openAnalysis(page);
   await page.screenshot({ path: `test-results/summary-${testInfo.project.name}.png`, fullPage: true });
+  await closeAnalysis(page);
   const originalLine = await page.locator('#graph-line').getAttribute('d');
   await page.getByRole('button', { name: 'Flip' }).click();
   await expect(page.locator('#graph-line')).toHaveAttribute('d', originalLine);
 
+  await openAnalysis(page);
   const graph = page.locator('#evaluation-graph');
   const bounds = await graph.boundingBox();
   await graph.click({ position: { x: bounds.width - 10, y: bounds.height / 2 } });
@@ -610,7 +682,7 @@ test('workspace fits the viewport and keeps the board controls visible', async (
     expect(board.width).toBeGreaterThan(150);
     expect(board.width).toBeCloseTo(board.height, 0);
     const visibleSections = ['.board-shell', '.board-toolbar', '.board-caption', '.board-feedback', 'footer'];
-    if (viewport.width > 850) {
+    if (viewport.width > 1024 && viewport.height > 600) {
       visibleSections.push('.summary-panel');
     }
     for (const selector of visibleSections) {
@@ -618,9 +690,10 @@ test('workspace fits the viewport and keeps the board controls visible', async (
       expect(bounds.y).toBeGreaterThanOrEqual(0);
       expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
     }
-    // The sidebar remains usable without pushing the board or page down.
+    await openAnalysis(page);
     await page.locator('.summary-panel').scrollIntoViewIfNeeded();
     await expect(page.locator('.summary-panel')).toBeInViewport();
+    await closeAnalysis(page);
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
   }
 });

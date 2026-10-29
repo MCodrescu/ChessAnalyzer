@@ -1,6 +1,7 @@
 import { formatGameResult, moveSquares, positionFor } from './review-state.js';
 import { ReviewSummary } from './review-summary.js';
 import { RatingSummary } from './rating-summary.js';
+import './analysis-dialog.js';
 import { importDialog, setReviewStatus } from './import-dialog.js';
 import { selectedGamePGN, selectedGameOrientation, setAnalysisBusy, setBoardReady } from './chesscom-import.js';
 
@@ -298,7 +299,7 @@ $('previous').addEventListener('click', () => navigateGamePosition(currentGamePo
 $('next').addEventListener('click', () => navigateGamePosition(currentGamePosition() + 1));
 $('last').addEventListener('click', () => navigateGamePosition(analysis.moves.length));
 document.addEventListener('keydown', (event) => {
-  if (importDialog.open || $('promotion-dialog').open) return;
+  if (document.querySelector('dialog[open]')) return;
   if (!analysis?.moves.length || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
   const position = currentGamePosition();

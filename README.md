@@ -85,7 +85,9 @@ handles legal moves, castling, en passant, and promotions. In Chess960, castle
 by moving your king onto the rook involved in castling.
 
 The interface works on desktop and mobile, so you can review at your desk or
-revisit a game on your phone.
+revisit a game on your phone. On smaller screens, the board takes center stage;
+select **Analysis** beside **Load game** to see accuracy, estimated ratings, and
+the evaluation graph. Close the summary to return to the board.
 
 ## Make Each Review Useful
 
