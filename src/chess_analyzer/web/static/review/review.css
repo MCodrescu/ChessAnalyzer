@@ -129,6 +129,38 @@ footer { display: flex; justify-content: space-between; gap: 8px; font-size: 9px
 	#position-label { margin: 6px 0; }.comparison-cards { margin-top: 6px; }.comparison-cards > div { padding: 5px 9px; }.comparison-cards strong { font-size: 20px; margin-top: 2px; }
 	.metrics { margin: 6px 0; }.preview-tabs button { padding: 6px 3px; }#preview-note { margin-top: 6px; font-size: 9px; }
 }
+@media (min-width: 1025px) and (min-height: 601px) {
+	.site-header { padding-inline: max(24px, calc((100vw - 1680px) / 2)); }
+	main { max-width: 1680px; padding: 8px 24px; }
+	.workspace { grid-template-columns: minmax(0, 1.1fr) minmax(380px, 1fr); gap: 24px; }
+	.player-card, .board-shell, .board-toolbar, .board-caption, .board-feedback { width: min(100%, max(0px, calc(100cqh - 184px))); }
+	.player-card { height: 32px; padding: 2px 3px; gap: 8px; }
+	.avatar { width: 28px; height: 28px; font-size: 23px; }
+	.player-card strong { font-size: 13px; }.player-card div > span { font-size: 10px; }
+	.board-toolbar { height: 40px; padding-top: 2px; }
+	.navigation button { font-size: 20px; padding: 4px 10px; }
+	.board-toolbar > button { padding: 6px 10px; }
+	.board-feedback { height: 24px; }
+	.workspace > .review-column { overflow: hidden; padding-bottom: 0; }
+	.workspace .summary-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; border-radius: 8px; }
+	.workspace .summary-panel > * { flex-shrink: 0; }
+	.workspace .summary-panel h2 { font-size: 17px; }
+	.workspace .summary-panel .panel-heading { margin-bottom: 12px; }
+	.workspace .accuracy-cards { gap: 14px; }
+	.workspace .accuracy-cards > div { padding: 12px; }
+	.workspace .accuracy-cards strong { font-size: 36px; }
+	.workspace .accuracy-color { font-size: 13px; }
+	.workspace .accuracy-cards [id$="-accuracy-name"] { font-size: 12px; }
+	.workspace .accuracy-note { display: block; font-size: 11px; margin-top: 10px; }
+	.workspace .performance-ratings { min-height: 44px; font-size: 13px; }
+	.workspace .performance-ratings strong { font-size: 28px; }
+	.workspace #rating-status { font-size: 12px; }
+	.workspace .graph-heading { margin-top: 20px; }
+	.workspace .summary-panel .evaluation-chart { flex: 1; min-height: 100px; }
+	.workspace .evaluation-chart svg { position: absolute; inset: 0; height: 100%; }
+	.workspace #graph-position { height: 20px; margin-top: 8px; }
+	.workspace #graph-note { font-size: 11px; margin-top: 8px; }
+}
 @media (max-width: 1024px), (max-height: 600px) {
 	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0; }
 	#show-analysis { display: inline-flex; align-items: center; justify-content: center; }

@@ -79,6 +79,33 @@ async function squarePoint(page, square) {
     y: (flipped ? rank : 7 - rank) * bounds.height / 8 + bounds.height / 16 };
 }
 
+test('desktop board and analysis expand to use the available workspace', async ({ page }, testInfo) => {
+  await loadReview(page);
+  for (const viewport of [
+    { width: 1280, height: 720 }, { width: 1657, height: 768 },
+    { width: 1440, height: 900 }, { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.locator('.workspace > .review-column')).toBeVisible();
+    const workspace = await page.locator('.workspace').boundingBox();
+    const board = await page.locator('#board').boundingBox();
+    const summary = await page.locator('.summary-panel').boundingBox();
+    const chart = await page.locator('#evaluation-graph').boundingBox();
+    expect(board.width).toBeGreaterThan(Math.min(viewport.height - 290, workspace.width / 2 - 30));
+    expect(board.width).toBeCloseTo(board.height, 0);
+    expect(summary.y + summary.height).toBeCloseTo(workspace.y + workspace.height, 0);
+    expect(chart.height).toBeGreaterThan(100);
+    for (const selector of ['.board-caption', '.board-feedback', '#graph-note', 'footer']) {
+      const bounds = await page.locator(selector).boundingBox();
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+    if (viewport.width === 1657) {
+      await page.screenshot({ path: `test-results/desktop-expanded-${testInfo.project.name}.png`, fullPage: true });
+    }
+  }
+});
+
 test('compact screens give the board full space and open analysis in a modal', async ({ page }, testInfo) => {
   await loadReview(page);
   for (const viewport of [
