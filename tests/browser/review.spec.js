@@ -79,6 +79,42 @@ async function squarePoint(page, square) {
     y: (flipped ? rank : 7 - rank) * bounds.height / 8 + bounds.height / 16 };
 }
 
+test('live evaluation follows recorded positions and variations below the board', async ({ page }, testInfo) => {
+  let searches = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/position/') searches++;
+  });
+  await loadReview(page, {
+    ...payload,
+    moves: payload.moves.map((move, index) => ({
+      ...move,
+      evaluation_after: { ...move.evaluation_after, best_move_uci: index === 0 ? 'e7e5' : 'g1f3' },
+    })),
+  });
+  const score = page.locator('#position-evaluation');
+  await expect(score).toBeInViewport();
+  await expect(score).toHaveText('+0.25');
+  await page.getByRole('button', { name: 'Next move', exact: true }).click();
+  await expect(score).toHaveText('-0.10');
+  await page.getByRole('button', { name: 'Last move', exact: true }).click();
+  await expect(score).toHaveText('+0.00');
+  await page.getByRole('button', { name: 'Flip' }).click();
+  await expect(score).toHaveText('+0.00');
+  expect(searches).toBe(0);
+  await page.getByRole('button', { name: 'First move', exact: true }).click();
+  await clickMove(page, 'd2', 'd4');
+  await expect(score).toHaveText('+0.15');
+  await expect(score).toBeInViewport();
+  await expect(page.locator('#position-search-status')).toBeEmpty();
+  await page.screenshot({ path: `test-results/live-evaluation-${testInfo.project.name}.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(score).toHaveText('+0.25');
+  await clickMove(page, 'e2', 'e4');
+  await expect(score).toHaveText('-0.10');
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(score).toHaveText('+0.25');
+});
+
 test('desktop board and analysis expand to use the available workspace', async ({ page }, testInfo) => {
   await loadReview(page);
   for (const viewport of [
@@ -171,7 +207,7 @@ test('summary-only review preserves board navigation, graph selection, and varia
   await expect(page.locator('#board')).toHaveAttribute('data-fen', start);
   await clickMove(page, 'd2', 'd4');
   await expect(page.locator('body')).toHaveClass(/variation-mode/);
-  await expect(page.locator('#position-search-status')).toContainText('Local Stockfish');
+  await expect(page.locator('#position-evaluation')).toHaveText('+0.15');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.locator('#board')).toHaveAttribute('data-fen', start);
   await clickMove(page, 'd2', 'd4');
@@ -356,7 +392,7 @@ test('trial moves preserve review scores and return through undo, reset, and nav
   const graph = await page.locator('#graph-line').getAttribute('d');
   await clickMove(page, 'd2', 'd4');
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterD4);
-  await expect(page.locator('#position-search-status')).toContainText('Local Stockfish');
+  await expect(page.locator('#position-evaluation')).toHaveText('+0.15');
   await expect(page.locator('body')).toHaveClass(/variation-mode/);
   for (const name of ['Undo', 'Reset']) {
     const control = page.getByRole('button', { name, exact: true });
@@ -390,7 +426,7 @@ test('trial moves preserve review scores and return through undo, reset, and nav
 test('board variation searches the next move and Reset restores the game', async ({ page }, testInfo) => {
   await loadReview(page);
   await clickMove(page, 'd2', 'd4');
-  await expect(page.locator('#position-search-status')).toContainText('Local Stockfish');
+  await expect(page.locator('#position-evaluation')).toHaveText('+0.15');
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(1);
   await expect(page.locator('body')).toHaveClass(/variation-mode/);
   await expect(page.locator('#reset-variation')).toBeEnabled();
@@ -402,7 +438,7 @@ test('board variation searches the next move and Reset restores the game', async
   expect(backdrop.pointerEvents).toBe('none');
   await page.screenshot({ path: `test-results/variation-${testInfo.project.name}.png`, fullPage: true });
   await clickMove(page, 'd7', 'd5');
-  await expect(page.locator('#position-search-status')).toContainText('Local Stockfish');
+  await expect(page.locator('#position-evaluation')).toHaveText('+0.15');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.locator('#board')).toHaveAttribute('data-fen', afterD4);
   await expect(page.locator('body')).toHaveClass(/variation-mode/);
@@ -430,6 +466,7 @@ test('outdated searches cannot overwrite a newer variation or restored game', as
   releases[0]();
   await expect.poll(() => requests.length).toBe(2);
   expect(requests).toEqual([afterE4, afterE5]);
+  await expect(page.locator('#position-evaluation')).toHaveText('Searching…');
   await expect(page.locator('#position-search-status')).toContainText('searching');
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(0);
   await page.getByRole('button', { name: 'Reset', exact: true }).click();
@@ -437,6 +474,7 @@ test('outdated searches cannot overwrite a newer variation or restored game', as
   releases[1]();
   await completed;
   await expect(page.locator('#position-search-status')).toBeEmpty();
+  await expect(page.locator('#position-evaluation')).toHaveText('+0.25');
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(2);
   await expect(page.locator('body')).not.toHaveClass(/variation-mode/);
 });
@@ -453,10 +491,11 @@ test('failed variation searches are explicit and can be retried', async ({ page 
   await loadReview(page);
   await clickMove(page, 'd2', 'd4');
   await expect(page.locator('#position-search-status')).toHaveText('Stockfish is unavailable.');
+  await expect(page.locator('#position-evaluation')).toHaveText('Unavailable');
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(0);
   failing = false;
   await page.getByRole('button', { name: 'Retry engine search' }).click();
-  await expect(page.locator('#position-search-status')).toContainText('Local Stockfish');
+  await expect(page.locator('#position-evaluation')).toHaveText('+0.15');
   await expect(page.locator('#retry-position')).toBeHidden();
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(1);
 });
@@ -469,6 +508,7 @@ test('terminal variations show the result without suggesting a move', async ({ p
   await loadReview(page, { ...payload, initial_fen: '7k/5Q2/6K1/8/8/8/8/8 w - - 0 1', moves: [] });
   await clickMove(page, 'f7', 'g7');
   await expect(page.locator('#position-search-status')).toHaveText('Game over: White wins (1-0).');
+  await expect(page.locator('#position-evaluation')).toHaveText('1-0');
   await expect(page.locator('#game-over')).toHaveText('Variation over · White wins (1-0)');
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(0);
   await page.getByRole('button', { name: 'Reset', exact: true }).click();
@@ -860,7 +900,7 @@ test('real Stockfish analysis works through the complete browser workflow', asyn
   const result = await response.json();
   const board = new Chess(result.fen);
   expect(board.moves()).toContain(result.best_move_san);
-  await expect(page.locator('#position-search-status')).toContainText('Local Stockfish');
+  await expect(page.locator('#position-evaluation')).not.toHaveText('Searching…');
   await expect(page.locator('#board svg.cg-shapes line')).toHaveCount(1);
   await expect(page.locator('body')).toHaveClass(/variation-mode/);
   await page.getByRole('button', { name: 'Reset', exact: true }).click();

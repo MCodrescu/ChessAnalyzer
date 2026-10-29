@@ -24,6 +24,8 @@ body.variation-mode .board-column { position: relative; z-index: 6; }
 .board-column { min-width: 0; min-height: 0; container-type: size; display: flex; flex-direction: column; align-items: center; }
 .player-card, .board-shell, .board-toolbar, .board-caption, .board-feedback { width: min(100%, max(0px, calc(100cqh - 220px))); flex-shrink: 0; }
 .board-feedback { height: 32px; display: flex; align-items: center; gap: 6px; overflow-y: auto; }
+.position-evaluation { display: inline-flex; align-items: baseline; gap: 8px; flex-shrink: 0; color: var(--muted); font-size: 11px; }
+#position-evaluation { color: var(--text); font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; min-width: 5ch; }
 .board-feedback #position-search-status { margin: 0; font-size: 10px; min-width: 0; }
 .board-feedback button { padding: 4px 6px; font-size: 10px; flex-shrink: 0; }
 .player-card { display: flex; gap: 10px; align-items: center; padding: 5px 3px; height: 44px; }

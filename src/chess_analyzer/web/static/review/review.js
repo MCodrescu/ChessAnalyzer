@@ -1,4 +1,4 @@
-import { formatGameResult, moveSquares, positionFor } from './review-state.js';
+import { formatEvaluation, formatGameResult, moveSquares, positionFor } from './review-state.js';
 import { ReviewSummary } from './review-summary.js';
 import { RatingSummary } from './rating-summary.js';
 import './analysis-dialog.js';
@@ -40,6 +40,7 @@ function searchPosition() {
   const version = positionSearchVersion;
   const fen = boardPosition.fen();
   const chess960 = boardPosition.chess960;
+  $('position-evaluation').textContent = 'Searching…';
   $('position-search-status').textContent = 'Stockfish is searching the shown position.';
   ground.setAutoShapes([]);
   // Serialize searches: abandoning a browser request does not stop its engine.
@@ -59,9 +60,10 @@ function searchPosition() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Position analysis failed. Please try again.');
         if (version !== positionSearchVersion) return;
+        $('position-evaluation').textContent = formatEvaluation(data.evaluation);
         $('position-search-status').textContent = data.evaluation.terminal_result
           ? `Game over: ${formatGameResult(data.evaluation.terminal_result)}.`
-          : 'Local Stockfish suggestion for the shown position. Game scores are unchanged.';
+          : '';
         if (data.evaluation.terminal_result) {
           showGameOver(data.evaluation.terminal_result, boardPosition.history().length > 0 || preview === 'best');
         }
@@ -71,6 +73,7 @@ function searchPosition() {
         }
       } catch (error) {
         if (version !== positionSearchVersion) return;
+        $('position-evaluation').textContent = 'Unavailable';
         $('position-search-status').textContent = error.message || 'Unable to reach the analysis server.';
         $('retry-position').hidden = false;
       }
@@ -126,6 +129,7 @@ function renderBoardPosition(lastMove, shapes = ground.state.drawable.autoShapes
 
 function loadBoardPosition(fen, lastMove, shapes = []) {
   cancelPositionSearch();
+  $('position-evaluation').textContent = '—';
   $('game-over').hidden = true;
   pendingPromotion = undefined;
   if ($('promotion-dialog').open) $('promotion-dialog').close();
@@ -229,6 +233,7 @@ function selectMove(index, nextPreview = 'before') {
   const position = positionFor(move, preview);
   const finalPosition = preview === 'played' && selected === analysis.moves.length - 1;
   loadBoardPosition(position.fen, position.lastMove, position.shapes);
+  $('position-evaluation').textContent = formatEvaluation(preview === 'played' ? move.evaluation_after : move.evaluation_before);
   $('board').setAttribute('aria-label', `Chessboard, ${finalPosition ? 'final position after' : `${preview} position for`} ${move.fullmove_number}${move.player === 'white' ? '.' : '…'} ${move.played_move_san}`);
   $('move-counter').textContent = `${selected + 1} / ${analysis.moves.length}`;
   if (finalPosition) {
