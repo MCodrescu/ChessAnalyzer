@@ -30,19 +30,15 @@ side of the board you are viewing. For example, **+1.5** means Stockfish judges
 White's position to be better by roughly a pawn and a half. It is an assessment
 of the position, not a guarantee of the result.
 
-The move list and navigation controls let you replay the whole game, including
+The graph and board navigation controls let you replay the whole game, including
 the final position and recorded result. Your games open from your side of the
 board, and **Flip** lets you see the other player's perspective.
 
 ## Compare Your Move With Another Choice
 
-Select any move to see what you played alongside Stockfish's recommendation.
-Board arrows highlight both choices, and the move insights show the evaluation
-and estimated loss in position value.
-
-- **Before move** shows the position where the decision was made.
-- **Played line** shows the position after the move from the game.
-- **Best line** shows the position after the engine's suggested alternative.
+Use the graph or board controls to revisit a position. Board arrows highlight
+your move in blue and Stockfish's recommendation in green. The graph shows how
+the balance changed as the game continued.
 
 This makes it easier to ask a specific question: did you overlook a threat,
 miss a stronger continuation, or choose a move that was already close to best?
@@ -94,7 +90,7 @@ revisit a game on your phone.
 ## Make Each Review Useful
 
 Start with one or two important moments instead of trying to memorize every
-engine suggestion. Before opening the best line, ask what you would play now
+engine suggestion. Before trying an alternative, ask what you would play now
 and what your opponent is threatening. Then test your answer on the board.
 
 Look for recurring habits across your reviews: overlooking forcing moves,

@@ -17,12 +17,14 @@ main { max-width: 1320px; width: 100%; margin: 0 auto; padding: 10px 20px; flex:
 .secondary { border-color: var(--border); color: #c3ccd5; font-size: 12px; }
 .workspace { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, 1fr); gap: 20px; flex: 1; min-height: 0; }
 body.variation-mode::after { content: ''; position: fixed; inset: 0; background: #80808066; backdrop-filter: grayscale(1) brightness(.55); z-index: 5; pointer-events: none; }
-body.variation-mode .board-column, body.variation-mode .comparison-panel { position: relative; z-index: 6; }
-body.variation-mode .comparison-panel { border-color: var(--accent); }
+body.variation-mode .board-column { position: relative; z-index: 6; }
 #position-search-status:empty { display: none; }
 /* Size the square from both available width and height, leaving controls visible. */
 .board-column { min-width: 0; min-height: 0; container-type: size; display: flex; flex-direction: column; align-items: center; }
-.player-card, .board-shell, .board-toolbar, .board-caption { width: min(100%, max(0px, calc(100cqh - 188px))); flex-shrink: 0; }
+.player-card, .board-shell, .board-toolbar, .board-caption, .board-feedback { width: min(100%, max(0px, calc(100cqh - 220px))); flex-shrink: 0; }
+.board-feedback { height: 32px; display: flex; align-items: center; gap: 6px; overflow-y: auto; }
+.board-feedback #position-search-status { margin: 0; font-size: 10px; min-width: 0; }
+.board-feedback button { padding: 4px 6px; font-size: 10px; flex-shrink: 0; }
 .player-card { display: flex; gap: 10px; align-items: center; padding: 5px 3px; height: 44px; }
 .player-card > div { min-width: 0; }
 .avatar { display: grid; place-items: center; background: #292f36; width: 32px; height: 32px; flex-shrink: 0; border-radius: 7px; font-size: 25px; color: #a7b2bf; }
@@ -109,7 +111,7 @@ form > label { font-size: 11px; color: var(--muted); display: block; margin-bott
 #import-description { margin: 0 0 18px; }#import-status { margin-bottom: 0; }
 footer { display: flex; justify-content: space-between; gap: 8px; font-size: 9px; color: #818d9a; border-top: 1px solid var(--border); padding-top: 6px; flex-shrink: 0; flex-wrap: wrap; }footer a { color: #adbca4; }
 @media (min-width: 851px) {
-	.review-column { display: grid; grid-template-rows: auto auto auto minmax(70px, 1fr); }
+	.review-column { display: flex; }
 	.moves-panel { min-height: 0; display: flex; flex-direction: column; }
 	.moves-panel .panel-heading { flex-shrink: 0; }.move-list { min-height: 0; max-height: none; }
 }
@@ -121,15 +123,15 @@ footer { display: flex; justify-content: space-between; gap: 8px; font-size: 9px
 	.metrics { margin: 6px 0; }.preview-tabs button { padding: 6px 3px; }#preview-note { margin-top: 6px; font-size: 9px; }
 }
 @media (max-width: 850px) {
-	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr); gap: 8px; }
+	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.6fr) minmax(0, 1fr); gap: 8px; }
 	.site-header { padding: 5px 12px; gap: 8px; }.brand { font-size: 16px; }.brand > span:first-child { font-size: 25px; }
 	.header-actions .local-badge, .brand-tag { display: none; }.header-actions button { padding: 7px 9px; font-size: 10px; }
 	.header-actions .primary { min-width: 0; }#import-dialog { padding: 14px; }.accuracy-cards strong { font-size: 22px; }
 	main { padding: 6px 10px; gap: 4px; }
-	.player-card, .board-shell { width: min(100%, max(0px, calc(100cqh - 148px))); }
+	.player-card, .board-shell { width: min(100%, max(0px, calc(100cqh - 180px))); }
 	.player-card { height: 32px; padding: 2px; gap: 7px; }.avatar { width: 26px; height: 26px; font-size: 21px; }
 	.player-card strong { font-size: 12px; }.player-card div > span { font-size: 9px; }
-	.board-toolbar, .board-caption { width: 100%; max-width: 420px; }
+	.board-toolbar, .board-caption, .board-feedback { width: 100%; max-width: 420px; }
 	.board-toolbar { padding-top: 2px; }.navigation button { padding: 3px 10px; font-size: 20px; }
 	.board-toolbar > button { padding: 6px 10px; }.board-caption { font-size: 9px; margin-top: 3px; }
 	footer { font-size: 8px; padding-top: 4px; }footer > span:last-child { display: none; }

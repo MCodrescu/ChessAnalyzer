@@ -42,6 +42,10 @@
             <button id="reset-variation" type="button" title="Return to the reviewed position" disabled><span aria-hidden="true">↺</span> Reset</button>
           </div>
         </div>
+        <div class="board-feedback">
+          <p id="position-search-status" class="muted" role="status" aria-live="polite"></p>
+          <button id="retry-position" type="button" class="secondary" hidden>Retry engine search</button>
+        </div>
       </div>
       <aside class="review-column">
         <div class="review-status">
@@ -77,27 +81,6 @@
           </div>
           <input id="graph-position" type="range" min="0" max="0" value="0" step="1" aria-label="Game graph position" aria-valuetext="No analyzed moves" disabled>
           <p id="graph-note" class="muted">Actual game · ±10 pawn display limit · Click the graph or use the slider.</p>
-        </section>
-        <section class="panel comparison-panel" aria-labelledby="position-heading">
-          <div class="panel-heading"><h2 id="position-heading">Move insights</h2><span id="quality" class="quality">READY TO EXPLORE</span></div>
-          <p id="position-label" class="muted">Select a move after analyzing a game.</p>
-          <div class="comparison-cards">
-            <div><span class="small-label">YOU PLAYED</span><strong id="played-move">—</strong></div>
-            <div class="best-card"><span class="small-label">ENGINE BEST · SHOWN POSITION</span><strong id="best-move" aria-live="polite">—</strong></div>
-          </div>
-          <div class="metrics"><span>Evaluation <strong id="evaluation">—</strong></span><span>Estimated loss <strong id="cp-loss">—</strong></span></div>
-          <div class="preview-tabs" role="group" aria-label="Board position preview">
-            <button data-preview="before" aria-pressed="true" disabled>Before move</button>
-            <button data-preview="played" aria-pressed="false" disabled>Played line</button>
-            <button data-preview="best" aria-pressed="false" disabled>Best line</button>
-          </div>
-          <p id="preview-note" class="muted">Click or drag pieces to try legal moves, or load a game to review.</p>
-          <p id="position-search-status" class="muted" role="status" aria-live="polite"></p>
-          <button id="retry-position" type="button" class="secondary" hidden>Retry engine search</button>
-        </section>
-        <section class="panel moves-panel">
-          <div class="panel-heading"><h2>Game moves</h2><span id="analysis-settings" class="small-label">NOT ANALYZED</span></div>
-          <div id="move-list" class="move-list" aria-label="Click a move to review"><div class="empty-state"><span aria-hidden="true">♟</span><p>Your game, move by move.</p><small>Select and analyze a game to see every decision here.</small></div></div>
         </section>
       </aside>
     </section>

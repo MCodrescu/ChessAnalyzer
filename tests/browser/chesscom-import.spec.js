@@ -197,7 +197,7 @@ test('labels and analyzes a selected Chess960 game with the local engine', async
   await page.getByRole('button', { name: 'Analyze game', exact: true }).click();
   await expect(page.locator('#status')).toContainText('Analysis complete', { timeout: 30_000 });
   await expect(page.locator('#board')).toHaveAttribute('data-fen', fen);
-  await page.getByRole('button', { name: 'Played line', exact: true }).click();
+  await page.getByRole('button', { name: 'Last move', exact: true }).click();
   await expect(page.locator('#board')).toHaveAttribute('data-fen', '4k3/8/8/8/8/8/8/R4RK1 b - - 1 1');
 });
 
